@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Le Puits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Le <span>Puits</span></h1>
+    <div class="ver">Moteur · prototype 0.22</div>
+  </header>
+
+  <div class="modebar">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabPlay" aria-selected="true">Jouer</button>
+      <button class="tab" role="tab" id="tabEdit" aria-selected="false">Éditeur de niveau</button>
+    </div>
+    <div class="save" id="saveStatus" data-s="local">Niveau d'origine</div>
+  </div>
+
+  <div class="frame" id="frame">
+    <canvas id="game" width="960" height="540" tabindex="0" aria-label="Zone de jeu"></canvas>
+    <div class="hud" id="hud">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="hearts" id="hearts"></div>
+          <div class="dark" id="darkBar" data-tier="pure" title="Lumière : elle baisse quand les ténèbres te gagnent"><div class="dark-track"><i id="darkFill"></i><b class="m-pure"></b><b class="m-abyss"></b></div><span id="darkVal">100 %</span></div>
+          <div class="skills" id="skills"></div>
+          <div class="purse" id="purse"><span class="ic coin" title="Pièces"></span><b id="coinVal">0</b><span class="ic key" title="Clés"></span><b id="keyVal">0</b></div>
+        </div>
+        <div class="hud-right">
+          <div class="pad" id="padWrap"><span class="clock" id="clock"></span><span class="sr" id="srHud" hidden></span><span id="pad">Clavier</span><span class="count" id="kills"></span><span class="count" id="itemCount"></span></div>
+          <canvas class="minimap" id="miniMap" width="152" height="78" title="Mini-carte (la carte complète est dans la pause)"></canvas>
+        </div>
+      </div>
+      <div class="bossbar" id="bossBar" hidden><span id="bossName"></span><div class="boss-track"><i id="bossFill"></i></div></div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <div class="edstatus" id="edStatus" hidden></div>
+    <div class="edfloat" id="edFloat" hidden>
+      <button class="btn" id="undoBig" title="Annuler (Ctrl+Z)">↶ Annuler</button>
+      <button class="btn" id="redoBig" title="Rétablir (Ctrl+Y)">↷ Rétablir</button>
+    </div>
+    <div class="menu" id="menu">
+      <div class="menu-panel" data-panel="main">
+        <div><span class="kicker">Une descente roguelite</span><div class="big">Le <em>Puits</em></div></div>
+        <nav class="menu-list" aria-label="Menu principal">
+          <button class="mi" data-act="continue" hidden>Continuer<small>reprendre la partie sauvegardée</small></button>
+          <button class="mi" data-act="story">Mode histoire</button>
+          <button class="mi" data-act="chaos">Mode chaos<small>nouvelle map à chaque partie</small></button>
+          <button class="mi" data-act="daily">Graine du jour<small>la même map chaos pour tout le monde aujourd'hui</small></button>
+          <button class="mi" data-act="heritage">Héritage<small>améliorations permanentes</small></button>
+          <button class="mi" data-act="bestiary">Bestiaire</button>
+          <button class="mi" data-act="controls">Commandes</button>
+          <button class="mi" data-act="options">Options</button>
+          <button class="mi" data-act="editor">Éditeur de niveau</button>
+        </nav>
+      </div>
+      <div class="menu-panel" data-panel="pause" hidden>
+        <div class="big small">Pause</div>
+        <nav class="menu-list" aria-label="Menu pause">
+          <button class="mi" data-act="resume">Reprendre</button>
+          <button class="mi" data-act="inventory">Inventaire</button>
+          <button class="mi" data-act="map">Carte du puits</button>
+          <button class="mi" data-act="escape">Retour au feu de camp<small>si tu es coincé · coûte un peu de lumière</small></button>
+          <button class="mi" data-act="savequit">Sauvegarder et quitter</button>
+          <button class="mi" data-act="restart">Recommencer la run</button>
+          <button class="mi" data-act="bestiary">Bestiaire</button>
+          <button class="mi" data-act="controls">Commandes</button>
+          <button class="mi" data-act="options">Options</button>
+          <button class="mi" data-act="title">Menu principal</button>
+        </nav>
+      </div>
+      <div class="menu-panel inv-panel" data-panel="inventory" hidden>
+        <div class="big small">Inventaire</div>
+        <div class="inv" id="invGrid"></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-panel map-panel" data-panel="map" hidden>
+        <div class="big small">Carte du puits <small id="mapCount"></small></div>
+        <div class="map-wrap" id="mapWrap"><canvas id="mapCanvas"></canvas></div>
+        <div class="map-legend"><span style="--c:#c4413b">Toi</span><span style="--c:#f2b54a">Feu de camp</span><span style="--c:#7fd6c0">Marchand</span><span style="--c:#f2d45a">Trésor, porte à clé</span><span style="--c:#9d6bc4">Porte du Gardien</span></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-panel heritage-panel" data-panel="heritage" id="heritagePanel" hidden></div>
+      <div class="menu-panel best-panel" data-panel="bestiary" hidden>
+        <div class="big small">Bestiaire</div>
+        <div class="best-grid" id="bestGrid"></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-panel" data-panel="controls" hidden>
+        <div class="big small">Commandes</div>
+        <div class="ctl" id="menuControls"></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-panel" data-panel="options" hidden>
+        <div class="big small">Options</div>
+        <div class="opt"><span>Sensation de mouvement</span><div class="seg" id="optPresets"></div></div>
+        <div class="opt"><span>Chrono</span><div class="seg"><button class="mi" data-act="clock" id="optClock" aria-pressed="true">Affiché</button></div></div>
+        <div class="opt"><span>Plein écran</span><div class="seg"><button class="mi" data-act="fullscreen" id="optFull" aria-pressed="false">Désactivé</button></div></div>
+        <div class="opt"><span>Mini-carte</span><div class="seg"><button class="mi" data-act="minimap" id="optMini" aria-pressed="true">Affichée</button></div></div>
+        <div class="opt"><span>Musique</span><div class="seg"><button class="mi" data-act="music" id="optMusic" aria-pressed="true">Activée</button></div></div>
+        <div class="opt"><span>Effets sonores</span><div class="seg"><button class="mi" data-act="sfx" id="optSfx" aria-pressed="true">Activés</button></div></div>
+        <div class="opt"><span>Mode speedrun</span><div class="seg"><button class="mi" data-act="speedrun" id="optSr" aria-pressed="false">Désactivé</button></div></div>
+        <div class="opt"><span>Héritage</span><div class="seg"><button class="mi" data-act="heritageToggle" id="optHer" aria-pressed="true">Actif</button></div></div>
+        <div class="opt"><span>Statistiques en ligne</span><div class="seg"><button class="mi" data-act="online" id="optOnline" aria-pressed="true">Activé</button></div></div>
+        <div class="opt"><span>Tremblements de l'écran</span><div class="seg"><button class="mi" data-act="shake" id="optShake" aria-pressed="true">Activés</button></div></div>
+        <div class="opt"><span>Clavier et manette</span><div class="seg"><button class="mi" data-act="keys">Changer les touches</button></div></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-panel end-panel" data-panel="end" hidden>
+        <div><span class="kicker">Fin de la run</span><div class="big small" id="endTitle">—</div></div>
+        <p class="end-text" id="endText"></p>
+        <p class="end-note" id="endNote" hidden></p>
+        <div class="end-cols">
+          <div class="ctl two" id="endStats"></div>
+          <div class="ctl two" id="endSplits"></div>
+        </div>
+        <p class="end-note" id="endUnlock"></p>
+        <nav class="row-list"><button class="mi" data-act="again">Nouvelle run</button><button class="mi" data-act="title">Menu principal</button></nav>
+      </div>
+      <div class="menu-panel keys-panel" data-panel="keys" hidden>
+        <div class="big small">Touches</div>
+        <div class="binds" id="bindGrid"></div>
+        <p class="bind-msg" id="bindMsg" aria-live="polite">Choisis une case, puis appuie sur la nouvelle touche.</p>
+        <nav class="row-list"><button class="mi" data-act="resetBinds">Touches par défaut</button><button class="mi" data-act="back">Retour</button></nav>
+      </div>
+      <div class="menu-hint">Flèches ou croix : choisir · Entrée ou A : valider · Échap ou B : retour</div>
+    </div>
+  </div>
+  <!-- Commandes tactiles : affichées seulement sur un écran tactile -->
+  <div class="rotate-hint">↻ Tourne ton téléphone pour jouer en grand</div>
+  <div class="touchpad" id="touchpad" hidden>
+    <div class="tp-dpad" id="tpDpad" aria-label="Croix directionnelle"><span class="tp-knob" id="tpKnob"></span></div>
+    <div class="tp-btns">
+      <button data-tp="phase">Phase</button><button data-tp="grapple">Grappin</button><button data-tp="pause" class="tp-pause">❚❚</button><button data-tp="full" class="tp-full" aria-label="Plein écran">⛶</button>
+      <button data-tp="bolt">Tir</button><button data-tp="dash">Dash</button>
+      <button data-tp="attack" class="big">Frapper</button><button data-tp="jump" class="big">Sauter</button>
+    </div>
+  </div>
+
+  <!-- ÉDITEUR -->
+  <section class="panel" id="editorPanel" aria-label="Éditeur de niveau" hidden>
+    <div class="panel-head">
+      <div class="row">
+        <button class="btn on" data-tool="brush">Pinceau</button>
+        <button class="btn" data-tool="rect">Rectangle</button>
+        <button class="btn" data-tool="hand">Main</button>
+        <span class="sep"></span>
+        <button class="btn" id="undo">↶ Annuler</button>
+        <button class="btn" id="redo">↷ Rétablir</button>
+        <span class="sep"></span>
+        <button class="btn" id="zoomOut" aria-label="Dézoomer">−</button>
+        <span class="field" id="zoomLabel">100 %</span>
+        <button class="btn" id="zoomIn" aria-label="Zoomer">+</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="saveNow">Enregistrer</button>
+        <button class="btn primary" id="testLevel">Tester la map</button>
+      </div>
+    </div>
+
+    <div class="palette" id="palette"></div>
+
+    <div class="row">
+      <label class="field" for="bucketDrop">Descente des seaux</label>
+      <input class="num" type="number" id="bucketDrop" min="1" max="30" value="5">
+      <span class="field">tuiles</span>
+      <span class="sep"></span>
+      <label class="field" for="mapW">Largeur</label><input class="num" type="number" id="mapW" min="8" max="256">
+      <label class="field" for="mapH">Hauteur</label><input class="num" type="number" id="mapH" min="8" max="256">
+      <button class="btn" id="resize">Redimensionner</button>
+    </div>
+
+    <div class="help">
+      <span><b>Clic gauche</b> : poser</span>
+      <span><b>Clic droit</b> ou <b>molette enfoncée</b> : déplacer la vue</span>
+      <span><b>Molette</b> : zoom</span>
+      <span><b>Flèches / ZQSD</b> : se déplacer</span>
+      <span><b>Ctrl+Z</b> : annuler</span>
+      <span><b>T</b> : tester depuis la case sous la souris</span>
+    </div>
+
+    <details>
+      <summary class="btn" style="display:inline-block">Copier, importer, réinitialiser</summary>
+      <div style="display:grid;gap:10px;margin-top:12px">
+        <p>Le texte ci-dessous contient toute ta map. Copie-le pour la garder ou me l'envoyer, colle un autre niveau pour l'importer.</p>
+        <textarea id="levelText" spellcheck="false" aria-label="Niveau au format texte"></textarea>
+        <div class="row">
+          <button class="btn" id="copyLevel">Copier le niveau</button>
+          <button class="btn" id="importLevel">Importer le texte collé</button>
+          <button class="btn danger" id="resetLevel">Revenir au niveau d'origine</button>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ATELIER DE TEST -->
+  <section class="panel" id="atelierPanel" aria-label="Atelier de test">
+    <div class="panel-head">
+      <h2>Atelier de test</h2>
+      <div class="row">
+        <button class="btn" id="clearItems">Retirer tous les objets</button>
+        <button class="btn" id="newRun">Nouvelle run</button>
+      </div>
+    </div>
+    <p>Active des skills et des objets à la volée. Activer un objet débloque aussi son skill. Les autels violets donnent un objet au hasard parmi ceux compatibles avec tes skills.</p>
+    <div class="group">
+      <h3>Skills</h3>
+      <div class="row" id="skillBtns"></div>
+    </div>
+    <div class="groups" id="itemGroups"></div>
+  </section>
+
+  <details class="panel">
+    <summary><h2>Réglages du mouvement</h2></summary>
+    <div class="panel-head"><div class="row" id="presets"></div></div>
+    <div class="sliders" id="sliders"></div>
+    <div class="panel-foot">
+      <button class="btn" id="copy">Copier les valeurs</button>
+      <code id="json"></code>
+    </div>
+  </details>
+
+  <div class="notes">
+    <section>
+      <h2>Contrôles</h2>
+      <div class="tbl">
+      <table>
+        <thead><tr><th>Action</th><th>Clavier</th><th>Manette</th></tr></thead>
+        <tbody id="pageControls"></tbody>
+      </table>
+      <p style="margin-top:8px">Tu peux changer les touches dans Options, depuis le menu ou la pause.</p>
+      </div>
+    </section>
+    <section>
+      <h2>Nouveau dans la 0.22</h2>
+      <ul>
+        <li>Moins d'objets, mais chacun compte. Chaque gardien vaincu laisse sa relique et trois objets au choix : tu n'en prends qu'un, les autres s'enchaînent. Une clé brise une chaîne (le reliquaire)</li>
+        <li>Les autels violets deviennent des autels des ombres : un seul au plus par profondeur, et l'objet se paie avec un peu de lumière. Coffres dorés, coffres et mimiques donnent moins souvent des objets</li>
+        <li>Le colporteur : un marchand ambulant, un par profondeur, jamais au même endroit. Ses prix montent en descendant. On peut le voler (frappe-le deux fois)… mais il ne revient plus de la partie</li>
+        <li>Le tripot : la roue des âmes, les dés d'os contre un squelette, et le coffre du parieur</li>
+        <li>La prison : une clé ouvre la cellule. Le prisonnier te suit comme compagnon (archère, chevalier déchu, porte-lanterne), te bénit… ou c'était un piège</li>
+        <li>En histoire, la carte reste la même mais les boutiques, trésors, prisons, tripots et sacrifices changent de place à chaque partie</li>
+        <li>Six nouvelles créatures : le Fouisseur, le Templier creux, la Gorgone, le Sonneur de glas, le Nécromancien et le Reflet</li>
+        <li>Les monstres se renforcent en descendant, et des champions (élites colorées : rapide, blindé, explosif, vampire, spectral) apparaissent. Les bonus de dégâts ont des rendements décroissants</li>
+        <li>Statistiques en ligne : chaque fin de partie envoie un résumé anonyme pour les tests d'équilibrage (à couper dans Options)</li>
+      </ul>
+      <h2>Dans la 0.21</h2>
+      <ul>
+        <li>Deux dimensions alternatives selon ta jauge de lumière. Vaincre le Gardien enragé (lumière pure) t'emporte dans le Royaume céleste ; vaincre le Gardien dévoré (ténèbres) te fait tomber dans le Royaume infernal. Le Gardien ordinaire, lui, mène toujours aux fins habituelles</li>
+        <li>Chaque dimension est un vrai niveau, plus dur que le puits : créatures renforcées, un seul feu de camp, pas de sauvegarde, et un danger propre au royaume (le Jugement céleste qui tombe du plafond, les geysers de feu de l'enfer)</li>
+        <li>Deux nouveaux boss finaux : le Séraphin (ailes de lumière, couronne de lances) et l'Archidémon (cornes, aura de braise, pluie de feu)</li>
+        <li>Deux nouvelles fins avec leurs scènes : « L'Ascension » au-dessus des nuages, et « Le Trône des Abysses »</li>
+        <li>L'étage des Abysses de la 0.20 est remplacé par le Royaume infernal</li>
+      </ul>
+      <h2>Dans la 0.20</h2>
+      <ul>
+                <li>Trois nouvelles fins, qui remplacent la fin ordinaire quand leur condition est remplie : la Fin de l'Ascète, la Fin de l'Éclair, la Fin du Cartographe. À toi de deviner comment les obtenir</li>
+        <li>Chaque fin a sa scène animée : le puits scellé à l'aube, le pilier de lumière, le cœur qui cesse de battre, le feu de camp solitaire, la course dans le soleil levant, la carte déroulée, la Source. Une touche la passe</li>
+        <li>L'écran de fin compte les 7 fins et liste celles déjà obtenues</li>
+      </ul>
+      <h2>Dans la 0.19</h2>
+      <ul>
+        <li>Nouvelle map du mode histoire, presque deux fois plus grande (117 salles au lieu de 62) et bien plus labyrinthique : embranchements, boucles, culs-de-sac, masses de roche</li>
+        <li>Chaque biome cache sa relique au fond d'un cul-de-sac, et sa sortie demande cette relique. On remonte par les échelles une fois le double saut trouvé : le premier biome se fait d'abord en descendant</li>
+        <li>Des passages des premiers biomes ne s'ouvrent qu'avec la frappe chargée ou la phase : il vaut la peine de revenir en arrière</li>
+        <li>Mode chaos rééquilibré : la vie des gardiens suit ta progression (65 % pour ta première relique, +7 % par relique déjà obtenue, jamais plus de 100 %), 10 % de moins en chaos, et ils attaquent un peu moins souvent</li>
+        <li>La lumière perdue en descendant est répartie selon la taille de la map (environ 45 % du haut jusqu'au fond)</li>
+        <li>En plein écran sur un grand écran, les menus et le HUD grandissent avec l'écran</li>
+      </ul>
+      <h2>Dans la 0.18</h2>
+      <ul>
+        <li>Le Gardien du puits a un vrai sprite : cornes, crâne casqué, rune lumineuse, poings levés avant ses frappes, couleurs selon sa forme</li>
+        <li>Chaque objet a sa propre icône</li>
+        <li>24 nouveaux objets (75 en tout) : Enclume de poche, Cœur de météore, Ressort de gnome, Épée de foudre, Boomerang d'os, Bouclier de lumière, Plume de phénix, Miroir de l'âme, Carte du cartographe, Boussole ancienne…</li>
+        <li>Synergies : certains objets vont ensemble et débloquent un bonus caché, annoncé par « Synergie ! » et listé dans l'inventaire</li>
+        <li>7 nouvelles salles en mode chaos : crypte, galerie de mine, piliers au-dessus des pics, bassin, racines, ossuaire, salle des statues</li>
+        <li>Héritage : chaque run rapporte des Braises, à dépenser au menu principal en améliorations permanentes (PV, pièces, clés, lumière, gardiens affaiblis, objet de départ). Il se coupe dans Options</li>
+        <li>Une vraie fin cachée… pour ceux qui ont connu la Lumière et les Abysses</li>
+        <li>Mode speedrun (Options) : temps intermédiaires comparés au record, meilleurs segments en doré, records par catégorie. Nouvelle entrée « Graine du jour » : la même map chaos pour tout le monde, le même jour</li>
+        <li>Chaque monstre a sa voix : grognement du golem, cri de la chauve-souris, réveil de la mimique…</li>
+        <li>Équilibrage : les gardiens sont plus faibles en haut du puits et plus solides au fond</li>
+      </ul>
+      <h2>Dans la 0.17</h2>
+      <ul>
+        <li>Plongeon, comme dans Dead Cells : ↓ + Frapper en l'air fait foncer vers le sol, et l'impact crée une onde de choc qui frappe et repousse les ennemis autour (plus forte si on tombe de haut). Un ennemi sur la route : on rebondit dessus comme avant. Un double saut annule le plongeon. Avec la Frappe chargée, le plongeon fend aussi les sols fissurés</li>
+        <li>Musique 16-bits générée en direct : un thème pour l'écran titre, un par biome, un pour les gardiens et un pour le Gardien final (plus rapide et plus aigu si ta flamme est pure, plus lourd et plus grave si les ténèbres t'ont gagné). Plus douce en pause, réglable dans Options</li>
+        <li>Bruitages 16-bits générés en direct : coups d'épée, coups qui portent et critiques, morts des monstres (plus graves pour les gros), tirs ennemis, saut, double saut, atterrissage, dash, phase, grappin, projectile, dégâts, pièces, gemmes, cœurs, clés, achats, coffres, jarres, leviers, portes à clé, murs fissurés, sol qui s'effrite, feux de camp, perte de lumière, reliques et objets, et pour les gardiens : apparition, salle qui se ferme, alertes, rage, victoire. Réglables à part dans Options</li>
+        <li>Mini-carte en haut à droite : les salles explorées autour de toi, avec les feux de camp, les marchands, les reliques et la porte du Gardien. Elle se masque dans Options</li>
+        <li>Mode chaos : plus de gardien dans la salle voisine du départ, il faut traverser au moins deux salles avant d'en croiser un</li>
+        <li>Mode chaos : la relique d'un biome est toujours sur le même étage que l'obstacle qu'elle ouvre, avant lui, souvent dans une salle à l'écart. Si on passe devant sans la voir, on peut toujours revenir la chercher</li>
+        <li>Mode chaos : une salle qui demande un pouvoir (seaux, marche, gouffre…) n'apparaît sur le chemin qu'une fois ce pouvoir forcément obtenu</li>
+        <li>On ne peut plus ressortir d'une salle de relique sans la relique, même si son gardien est déjà vaincu</li>
+        <li>Pause → « Retour au feu de camp » : si tu es coincé malgré tout (par exemple après avoir retiré un skill dans l'atelier de test), tu reviens au dernier feu allumé, ou au départ, contre un peu de lumière</li>
+      </ul>
+      <h2>Dans la 0.16</h2>
+      <ul>
+        <li>Après une chute dans les pics, on réapparaît toujours sur un vrai sol, devant les pics (plus jamais sur une plateforme friable)</li>
+        <li>Gardiens approfondis : la salle se ferme pendant le combat, chaque gardien a 2 ou 3 attaques annoncées (il rougeoie, marques rouges au sol ou au plafond) et enrage sous la moitié de ses PV</li>
+        <li>Mode chaos : on ne descend qu'un étage à la fois, et chaque biome se termine par une serrure qui demande la relique trouvée dans ce biome (comme dans Symphony of the Night). Une relique bonus se cache parfois dans une salle à l'écart</li>
+      </ul>
+      <h2>Dans la 0.15 (remaster)</h2>
+      <ul>
+        <li>Fonds en parallaxe sur plusieurs plans selon le biome : piliers et rayons de lumière, charpentes et cages, aqueducs, champignons géants, côtes osseuses</li>
+        <li>Cape physique qui flotte au vent, salto au double saut, respiration, ombres sous les pieds, foulard</li>
+        <li>Arcs d'épée en croissant (couleur selon l'arme), lame visible pendant le coup</li>
+        <li>Monstres qui s'étirent et s'écrasent selon leurs mouvements, halos de lumière colorés</li>
+        <li>Petite vibration sur téléphone à chaque bouton</li>
+      </ul>
+      <h2>Dans la 0.14</h2>
+      <ul>
+        <li>Un gardien (mini-boss) dans chaque salle de relique : la relique n'apparaît qu'une fois le gardien vaincu</li>
+        <li>Pause : inventaire (avec des descriptions volontairement floues, à toi de deviner), carte du puits (M), sauvegarde (« Sauvegarder et quitter », et chaque feu de camp sauvegarde)</li>
+        <li>« Continuer » au menu principal pour reprendre ta partie</li>
+        <li>Coups plus percutants : arrêt sur image, monstres qui s'écrasent, étincelles</li>
+        <li>Commandes tactiles, affichées seulement sur téléphone ou tablette (à l'horizontale, le jeu prend tout l'écran)</li>
+        <li>Plein écran (bouton ⛶ sur téléphone, et dans les Options) : sur téléphone, la page ne montre plus que le jeu et les commandes</li>
+        <li>Test complet d'une run par un robot : quelques passages corrigés (courant d'air trop faible avec les réglages lourds, salle de la fosse à sens unique, couloirs du dash difficiles à prendre, pont friable sans trous, les seaux demandent le double saut)</li>
+        <li>Éditeur : boutons Annuler / Rétablir toujours visibles sur la map, et le départ du héros ne peut plus être effacé</li>
+      </ul>
+      <h2>Dans la 0.13</h2>
+      <ul>
+        <li>La jauge montre maintenant ta lumière : 100 % en arrivant de dehors, elle baisse par à-coups (la torche vacille), plus vite en profondeur</li>
+        <li>Nouvel écran titre : le héros court dans la forêt au crépuscule, puis saute dans le puits quand tu lances une partie (n'importe quelle touche passe la scène)</li>
+        <li>Attaque vers le haut (↑ + Frapper) et en diagonale (↑ ou ↓ en l'air + une direction). Le projectile vise aussi</li>
+        <li>Butin à la Isaac : pièces, gemmes, cœurs (ils restent au sol si tu es plein) et clés, lâchés par les monstres, les jarres et les coffres</li>
+        <li>Coffres dorés et portes à clé. On commence avec une clé</li>
+        <li>Salles spéciales derrière une porte à clé, en histoire comme en chaos : boutique, trésor, autel du sacrifice (1 PV contre une récompense)</li>
+        <li>Vrais sprites en pixel art pour le héros (repos, course, saut, chute) et tous les monstres. Les morts éclatent en pixels</li>
+        <li>4 nouveaux monstres : champignon sauteur, prisonnier squelette (lance des os), rôdeur d'ombre (invisible dans le noir), mimique (un coffre qui mord)</li>
+        <li>Bestiaire (menu principal et pause) : chaque créature vue, combien de fois vaincue, et comment la battre</li>
+        <li>Décor vivant : torches, lanternes et chaînes de la prison, racines, gouttes, filaments lumineux, tonneaux, ossements, et des particules d'ambiance par biome</li>
+        <li>27 nouveaux objets : armes (lame spectrale, double tranchant, allonge, lame de braise, écho…), pouvoirs détournés (orbe géant, chouette, lame du vent, ailes stellaires, phase de givre, poing sismique…) et passifs (patte de lapin, aimant, trousseau, bourse…)</li>
+      </ul>
+      <h2>Dans la 0.12</h2>
+      <ul>
+        <li>Mode chaos : une nouvelle map à chaque partie, assemblée à partir des salles modèles, avec 3 ou 4 reliques tirées au hasard. Chaque map est vérifiée avant de jouer</li>
+        <li>Nouvelle map du mode histoire, non linéaire : 56 salles sur cinq biomes, de l'entrée lumineuse à l'antre corrompu</li>
+        <li>Chaque biome a ses couleurs, sa lumière, ses décors et son histoire (tablettes à lire)</li>
+        <li>Nouveaux éléments : plateformes friables, eau, courants d'air, murs d'accroche (saut mural), vannes et leviers, coffres, faux murs</li>
+        <li>Arènes qui se ferment : deux vagues de monstres, puis un coffre</li>
+        <li>Salles secrètes : un mur fissuré dès le départ, et un secret caché dans plusieurs biomes</li>
+        <li>Les chauves-souris frémissent avant de plonger, et sont un peu plus lentes</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<script src="js/01-base.js"></script>
+<script src="niveaux/map-principale.js"></script>
+<script src="js/02-niveau.js"></script>
+<script src="js/03-reglages-objets.js"></script>
+<script src="js/04-entrees.js"></script>
+<script src="js/05-collisions.js"></script>
+<script src="js/06-joueur.js"></script>
+<script src="js/07-combat.js"></script>
+<script src="js/08-projectiles.js"></script>
+<script src="js/09-ennemis.js"></script>
+<script src="js/10-monde.js"></script>
+<script src="js/11-rendu.js"></script>
+<script src="js/12-interface.js"></script>
+<script src="js/13-editeur.js"></script>
+<script src="js/14-sauvegarde.js"></script>
+<script src="js/15-menus.js"></script>
+<script src="js/16-boucle.js"></script>
+<script src="js/17-tenebres.js"></script>
+<script src="js/18-boss.js"></script>
+<script src="js/19-fin-de-run.js"></script>
+<script src="js/20-titre.js"></script>
+<script src="js/21-elements.js"></script>
+<script src="js/22-biomes.js"></script>
+<script src="niveaux/salles.js"></script>
+<script src="niveaux/plan-histoire.js"></script>
+<script src="js/23-assembleur.js"></script>
+<script src="js/24-chaos.js"></script>
+<script src="js/25-butin.js"></script>
+<script src="js/26-sprites.js"></script>
+<script src="js/27-bestiaire.js"></script>
+<script src="js/27b-gardiens.js"></script>
+<script src="js/27c-objets.js"></script>
+<script src="js/27d-monstres.js"></script>
+<script src="js/28-decor.js"></script>
+<script src="js/28b-pause.js"></script>
+<script src="js/28c-tactile.js"></script>
+<script src="js/28d-remaster.js"></script>
+<script src="js/28e-heritage.js"></script>
+<script src="js/28f-vraiefin.js"></script>
+<script src="js/28g-speedrun.js"></script>
+<script src="js/28h-fins.js"></script>
+<script src="js/28i-economie.js"></script>
+<script src="js/30-musique.js"></script>
+<script src="js/31-sons.js"></script>
+<script src="js/32-en-ligne.js"></script>
+<script src="js/29-demarrage.js"></script>
+</body>
+</html>
