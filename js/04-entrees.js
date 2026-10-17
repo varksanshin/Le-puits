@@ -98,12 +98,42 @@ addEventListener("keyup", e => keys.delete(e.code));
 addEventListener("blur", () => { keys.clear(); if (mode === "play" && screen === "play" && running) openPause(); });
 
 // Certains navigateurs (aperçu dans une app, iframe) interdisent la manette : on joue alors au clavier sans planter
-let padBlocked = false;
+let padBlocked = false, padActive = -1, padWarned = false;
+/* La manette : on prend celle qu'on vient d'utiliser (un PC liste parfois d'autres « manettes » : casque, volant, pilote virtuel…),
+   sinon la première au format standard. Une manette Xbox mal reconnue (format « brut », par ex. Firefox sous Linux)
+   est remise au format standard : A B X Y, LB RB, LT RT, Select, Start, sticks, croix. */
+const padPressed = g => g.buttons.some(b => b && b.pressed) || g.axes.some((a, i) => i < 4 && Math.abs(a) > 0.5);
+function normalizePad(g) {
+  if (g.mapping === "standard") return g;
+  const B = i => g.buttons[i] || { pressed: false, value: 0 }, A = i => g.axes[i] || 0;
+  const fake = (p, v = p ? 1 : 0) => ({ pressed: p, value: v });
+  // disposition « xinput » brute : A0 B1 X2 Y3 LB4 RB5 Select6 Start7 Guide8 L3 9 R3 10, gâchettes et croix sur des axes
+  const dx = g.axes.length > 7 ? A(6) : 0, dy = g.axes.length > 7 ? A(7) : 0;
+  const buttons = [B(0), B(1), B(2), B(3), B(4), B(5), fake(A(2) > 0.3, (A(2) + 1) / 2), fake(A(5) > 0.3, (A(5) + 1) / 2),
+    B(6), B(7), B(9), B(10), fake(dy < -0.5), fake(dy > 0.5), fake(dx < -0.5), fake(dx > 0.5), B(8)];
+  if (g.buttons.length >= 17) for (let i = 12; i < 17; i++) if (g.buttons[i] && g.buttons[i].pressed) buttons[i] = g.buttons[i];
+  return { id: g.id, index: g.index, connected: true, mapping: "standard", buttons, axes: [A(0), A(1), A(3), A(4)] };
+}
 function findGamepad() {
   if (padBlocked || !navigator.getGamepads) return null;
-  try { return [...navigator.getGamepads()].find(g => g && g.connected) || null; }
-  catch (e) { padBlocked = true; return null; }
+  let list;
+  try { list = [...navigator.getGamepads()].filter(g => g && g.connected && g.buttons.length >= 4); }
+  catch (e) { padBlocked = true; padNotice(); return null; }
+  if (!list.length) return null;
+  const used = list.find(padPressed);
+  if (used) padActive = used.index;
+  const g = list.find(x => x.index === padActive) || list.find(x => x.mapping === "standard") || list[0];
+  return normalizePad(g);
 }
+function padNotice() {
+  if (padWarned) return; padWarned = true;
+  if (typeof toast === "function") toast("Ce navigateur bloque la manette ici (aperçu intégré). Ouvre le jeu sur son site pour jouer à la manette.", 4200);
+}
+addEventListener("gamepadconnected", e => {
+  if (padBlocked) { padNotice(); return; }
+  if (e.gamepad && e.gamepad.buttons.length >= 4) { padActive = e.gamepad.index; if (typeof toast === "function") toast("Manette connectée. A pour valider, B pour revenir, Start pour la pause.", 2600); }
+});
+addEventListener("gamepaddisconnected", e => { if (e.gamepad && e.gamepad.index === padActive) { padActive = -1; if (typeof toast === "function") toast("Manette déconnectée.", 1800); } });
 const input = { x: 0, up: false, down: false, jump: false, attack: false, jumpPressed: false, attackPressed: false, dashPressed: false, boltPressed: false, grapplePressed: false, phasePressed: false, resetPressed: false, pausePressed: false, pad: false };
 const prev = { jump: false, attack: false, dash: false, bolt: false, grapple: false, phase: false, reset: false, pause: false };
 function readInput() {

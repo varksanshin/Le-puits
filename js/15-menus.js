@@ -209,7 +209,11 @@ function pollMenuPad() {
   if (edge("down")) moveFocus(1, true);
   if (edge("left")) moveFocus(-1);
   if (edge("right")) moveFocus(1);
-  if (edge("a") && menuEl.contains(document.activeElement)) document.activeElement.click();
+  if (edge("a")) {
+    // pas encore de bouton choisi (souris ou tactile avant) : A choisit le premier, puis valide
+    if (menuEl.contains(document.activeElement) && document.activeElement.matches("button, [data-act]")) document.activeElement.click();
+    else moveFocus(1, true);
+  }
   else if (edge("back")) { if (menuPanel !== menuRoot) goBack(); else if (screen === "pause") closeMenu(); }
   else if (edge("start") && screen === "pause") closeMenu();
   menuPad = st;

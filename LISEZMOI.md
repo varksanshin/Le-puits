@@ -58,6 +58,7 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
                            salles spéciales tirées au sort en histoire, champions et renfort des monstres en profondeur
   30-musique.js            la musique 16-bits générée en direct
   31-sons.js               les bruitages générés en direct (héros, combat, monstres, butin, gardiens)
+  33-synchro.js            synchronise la progression entre appareils (code de reprise, Supabase : cloud_saves)
   32-en-ligne.js           envoie un résumé anonyme de chaque partie à Supabase (projet « le-puits ») pour l'équilibrage
   29-demarrage.js          le démarrage du jeu (toujours le dernier)
 outils/assembler.py        refait une version en un seul fichier HTML
