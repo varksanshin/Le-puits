@@ -136,7 +136,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
     if (!entering()) {
       if (loading() && ecoPending) runSeed = ecoPending.runSeed || 0;
       else if (!loading()) runSeed = Math.floor(Math.random() * 1e9);
-      if (level.shuffled == null) storyBase = level;
+      if (level.shuffled == null && gameMode === "story") storyBase = level;
       if (storyShuffleOK() && !(loading() && ecoPending && ecoPending.noShuffle)) {
         const lv = buildStoryLevel(runSeed);
         if (lv) level = lv;

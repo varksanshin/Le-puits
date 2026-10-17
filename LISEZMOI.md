@@ -58,6 +58,8 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
                            salles spéciales tirées au sort en histoire, champions et renfort des monstres en profondeur
   30-musique.js            la musique 16-bits générée en direct
   31-sons.js               les bruitages générés en direct (héros, combat, monstres, butin, gardiens)
+  34-pvp.js                le duel en ligne : pseudo, recherche d'adversaire, draft, arène, manches, classement (Supabase Realtime)
+  vendor/supabase.js       la bibliothèque Supabase (chargée seulement quand on ouvre le duel)
   33-synchro.js            synchronise la progression entre appareils (code de reprise, Supabase : cloud_saves)
   32-en-ligne.js           envoie un résumé anonyme de chaque partie à Supabase (projet « le-puits ») pour l'équilibrage
   29-demarrage.js          le démarrage du jeu (toujours le dernier)
@@ -85,6 +87,7 @@ Pour ajouter un fichier, place sa balise au bon endroit dans cette liste.
 - **Les synergies** : `SYNERGIES` dans `js/27c-objets.js` (deux objets → un bonus).
 - **L'Héritage** : `HERITAGE` en haut de `js/28e-heritage.js` (coûts par niveau) et `embersFor` pour les Braises gagnées.
 - **Économie et difficulté** : `ECO` en haut de `js/28i-economie.js` (autels, colporteurs, renfort par profondeur, taux de champions, plafond des dégâts, prix du tripot). Les salles spéciales de l'histoire : `STORY_BAGS`. Les prix de base : `PRICES` dans `js/25-butin.js`.
+- **Duel** : `PVP` en haut de `js/34-pvp.js` (nombre de choix, temps par choix, manches, durée d'une manche, PV par cœur, dégâts). Objets interdits en duel : `PVP_BAN`. L'arène : `pvpArena()`. Côté Supabase : `pvp_players`, `pvp_matches`, fonctions `pvp_*` (Elo, K = 32).
 - **Statistiques en ligne** : tableau `runs` dans Supabase, vues `balance_summary` (taux de victoire, objets et dégâts moyens par profondeur) et `death_causes` (ce qui tue le plus).
 - **Les fins** : textes dans `ENDINGS` (`js/19-fin-de-run.js` et `js/28h-fins.js`), conditions dans `specialEnding`, scènes dans `SCENES` et leur durée dans `OUTRO_LEN` (`js/28h-fins.js`). Les dimensions sont dans `DIMENSIONS` (renfort des créatures, danger, fréquence) ; leurs maîtres sont `BOSS_VARIANTS.seraphin` et `BOSS_VARIANTS.demon`.
 - **Le plongeon** : `DIVE` en haut de `js/07-combat.js`.

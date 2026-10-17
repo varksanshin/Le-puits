@@ -53,6 +53,7 @@
           <button class="mi" data-act="continue" hidden>Continuer<small>reprendre la partie sauvegardée</small></button>
           <button class="mi" data-act="story">Mode histoire</button>
           <button class="mi" data-act="chaos">Mode chaos<small>nouvelle map à chaque partie</small></button>
+          <button class="mi" data-act="pvp">Duel en ligne<small>draft de 5 objets puis combat contre un joueur</small></button>
           <button class="mi" data-act="daily">Graine du jour<small>la même map chaos pour tout le monde aujourd'hui</small></button>
           <button class="mi" data-act="heritage">Héritage<small>améliorations permanentes</small></button>
           <button class="mi" data-act="sync">Synchroniser<small>ta progression sur PC et téléphone</small></button>
@@ -90,6 +91,9 @@
       </div>
       <div class="menu-panel heritage-panel" data-panel="heritage" id="heritagePanel" hidden></div>
       <div class="menu-panel sync-panel" data-panel="sync" id="syncPanel" hidden></div>
+      <div class="menu-panel pvp-panel" data-panel="pvp" id="pvpPanel" hidden></div>
+      <div class="menu-panel pvp-panel" data-panel="pvpDraft" id="pvpDraftPanel" hidden></div>
+      <div class="menu-panel pvp-panel" data-panel="pvpRank" id="pvpRankPanel" hidden></div>
       <div class="menu-panel best-panel" data-panel="bestiary" hidden>
         <div class="big small">Bestiaire</div>
         <div class="best-grid" id="bestGrid"></div>
@@ -252,6 +256,7 @@
         <li>Six nouvelles créatures : le Fouisseur, le Templier creux, la Gorgone, le Sonneur de glas, le Nécromancien et le Reflet</li>
         <li>Les monstres se renforcent en descendant, et des champions (élites colorées : rapide, blindé, explosif, vampire, spectral) apparaissent. Les bonus de dégâts ont des rendements décroissants</li>
         <li>Statistiques en ligne : chaque fin de partie envoie un résumé anonyme pour les tests d'équilibrage (à couper dans Options)</li>
+        <li>Duel en ligne (1 contre 1) : choisis un pseudo, trouve un adversaire (partie rapide ou salon privé avec un code), drafte 5 objets parmi 3 à chaque fois, puis affronte-le dans l'arène avec tous les pouvoirs. Deux manches gagnantes, classement Elo. Le 2 contre 2 arrive ensuite</li>
         <li>Synchroniser : ta progression (partie en cours, Héritage, bestiaire, fins, records) suit d'un appareil à l'autre avec un code de reprise, sans compte</li>
         <li>Manette : meilleure détection (manette Xbox par câble, autres périphériques ignorés), A valide dans les menus même sans sélection, message si le navigateur bloque la manette</li>
       </ul>
@@ -401,6 +406,7 @@
 <script src="js/31-sons.js"></script>
 <script src="js/32-en-ligne.js"></script>
 <script src="js/33-synchro.js"></script>
+<script src="js/34-pvp.js"></script>
 <script src="js/29-demarrage.js"></script>
 </body>
 </html>

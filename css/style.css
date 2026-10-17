@@ -338,3 +338,30 @@ body.ui-big .hud{zoom:var(--ui,1)}
 .sync-state{margin:0;font-family:var(--font-mono);font-size:12px;color:#7fd6c0}
 .sync-link input{width:100%;box-sizing:border-box;font:600 16px var(--font-mono);letter-spacing:.05em;text-transform:uppercase;padding:10px 12px;background:rgba(0,0,0,.35);color:#f6efe0;border:1px solid rgba(233,225,207,.25);border-radius:6px}
 .sync-link input:focus{outline:2px solid #f2b54a;outline-offset:1px}
+/* Duel en ligne (0.22) */
+.pvp-panel{max-width:min(620px,90%)}
+.pvp-me{margin:0;font-family:var(--font-mono);font-size:13px;color:var(--ash)}
+.pvp-me b{font-family:var(--font-display);font-size:22px;font-weight:400;color:#f2b54a;margin-right:6px}
+.pvp-me span{margin-left:8px}
+.pvp-help{margin:0;font-size:13px;line-height:1.45;color:var(--ash);max-width:52ch}
+.pvp-status{margin:0;font-family:var(--font-mono);font-size:12px;color:#7fd6c0;min-height:1em}
+.pvp-status.searching::after{content:"";display:inline-block;width:6px;height:6px;margin-left:8px;border-radius:50%;background:#7fd6c0;animation:pvpPulse 1s infinite}
+@keyframes pvpPulse{50%{opacity:.2}}
+.pvp-timer{margin:0;font-family:var(--font-mono);font-size:20px;color:#f2b54a}
+.pvp-cards .mi.pvp-card{display:block;text-align:left;padding:10px 12px;border:1px solid rgba(233,225,207,.18);border-radius:8px;margin-bottom:6px}
+.pvp-card-n{display:block}
+.pvp-card small{display:block;margin:4px 0 0;letter-spacing:.02em;text-transform:none;font-size:12px;line-height:1.4}
+.pvp-picks{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pvp-picks small{font-family:var(--font-mono);font-size:11px;color:var(--ash);margin-right:4px}
+.pvp-chip{font-family:var(--font-mono);font-size:11px;padding:3px 8px;border-radius:999px;background:rgba(242,212,90,.12);color:#f2d45a}
+.pvp-chip.empty{color:var(--ash);background:transparent}
+.pvp-wait{margin:0;color:#7fd6c0;font-family:var(--font-mono);font-size:12px}
+.pvp-result{display:flex;flex-direction:column;gap:4px;font-family:var(--font-mono);font-size:13px;color:var(--ash)}
+.pvp-result b{font-family:var(--font-display);font-size:30px;font-weight:400}
+.pvp-result.win b{color:#f2d45a}.pvp-result.lose b{color:#e0453c}
+.pvp-rank{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px;color:#e9e1cf}
+.pvp-rank th{text-align:left;color:var(--ash);font-weight:400;padding:4px 6px;border-bottom:1px solid rgba(233,225,207,.15)}
+.pvp-rank td{padding:4px 6px;border-bottom:1px solid rgba(233,225,207,.06)}
+.pvp-rank tr.me td{color:#f2b54a}
+.menu-list .mi[disabled]{opacity:.4;pointer-events:none}
+body.pvp-on .hud > *:not(.toast):not(#toast):not(.toasts){visibility:hidden}
