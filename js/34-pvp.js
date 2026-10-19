@@ -160,9 +160,8 @@ function pvpOnMsg(ev, m) {
 }
 
 // ----- Le draft, directement dans l'arène -----
-/* Trois piédestaux apparaissent près de toi : marche sur un objet pour le prendre (ou attends : au bout de 20 s,
-   le jeu choisit pour toi). Cinq fois de suite. Une ligne en bas de l'écran montre tes 5 emplacements.
-   Pendant le draft, on voit l'adversaire bouger, mais personne ne peut toucher personne. */
+/* Un menu par-dessus l'arène : trois cartes (image, nom, effet), on en prend une, puis les trois suivantes… cinq fois.
+   En bas, la ligne des 5 emplacements se remplit. Au bout de 20 s sans choix, le jeu choisit pour toi. */
 function pvpStartDraft() {
   const rand = rng((PVP.seed ^ hashStr(PVP.me.pid)) >>> 0 || 1);
   const pool = pvpPool(), offers = [];
@@ -175,9 +174,9 @@ function pvpStartDraft() {
   PVP.draft = { offers, step: 0, t: PVP.pickTime };
   PVP.myItems = [];
   pvpEnterArena();
-  PVP.phase = "draft";
-  pvpPlacePeds();
-  toast(`Arène : <b>${PVP.arenaName}</b>. Marche sur un objet pour le prendre.`, 3200, true);
+  PVP.phase = "draft"; PVP.peds = [];
+  screen = "draft"; menuRoot = "pvpDraft"; $("hud").hidden = true; document.body.classList.add("pvp-drafting");
+  showPanel("pvpDraft"); renderDraft();
 }
 // Trois piédestaux sur le sol, de ton côté de l'arène
 function pvpPlacePeds() {
@@ -204,30 +203,41 @@ function pvpPick(id) {
   const ped = (PVP.peds || []).find(o => o.id === id);
   if (ped) burst(ped.x + 6, ped.y, 26, "#f2d45a", 120);
   if (typeof SFX !== "undefined") SFX.play("item");
-  if (ITEM[id]) toast(`<b>${ITEM[id].name}</b><br><i>${ITEM[id].desc}</i>`, 2600, true);
   if (d.step >= PVP.picks) {
-    PVP.peds = [];
     PVP.phase = "wait"; PVP.chan && PVP.chan.send("draft", { items: PVP.myItems });
+    renderDraft();
     pvpMaybeGo();
-  } else pvpPlacePeds();
+  } else renderDraft();
 }
 function pvpMaybeGo() {
   if (PVP.phase !== "wait" || !PVP.oppItems) return;
   if (PVP.host) { PVP.chan.send("go", { items: PVP.myItems }); pvpBeginFight(PVP.oppItems); }
 }
-function renderDraft() {}
+function renderDraft() {
+  const el = document.getElementById("pvpDraftPanel"); if (!el || !PVP.draft) return;
+  const d = PVP.draft, done = PVP.phase !== "draft";
+  const icon = id => `<canvas class="pvp-ic" width="8" height="10" data-icon="${id}"></canvas>`;
+  const fam = it => it.mystery ? "Maudit" : it.skill ? (RELIC_INFO[it.skill] ? RELIC_INFO[it.skill].name : "Pouvoir") : it.cat === "lame" ? "Arme" : "Objet";
+  const slots = Array.from({ length: PVP.picks }, (_, i) => { const id = PVP.myItems[i]; return `<span class="pvp-slot${id ? " on" : ""}${i === d.step && !done ? " next" : ""}" title="${id ? ITEM[id].name : ""}">${id ? icon(id) : ""}</span>`; }).join("");
+  const head = `<div><span class="kicker">Duel contre ${PVP.opp.pseudo} · ${PVP.opp.rating} · ${PVP.arenaName || ""}</span>
+    <div class="big small">${done ? "Ton build est prêt" : `Choix ${d.step + 1} sur ${PVP.picks}`}</div></div>`;
+  const body = done
+    ? `<p class="pvp-wait">${PVP.oppItems ? "Ton adversaire est prêt. Le combat commence…" : `En attente de ${PVP.opp.pseudo}…`}</p>`
+    : `<p class="pvp-timer"><span style="width:${Math.max(0, d.t / PVP.pickTime * 100)}%"></span>${Math.max(0, Math.ceil(d.t))} s</p>
+       <nav class="pvp-cards" aria-label="Choisis un objet">${d.offers[d.step].map(id => { const it = ITEM[id]; return `<button class="mi pvp-card" data-act="pvpPick:${id}">${icon(id)}<span class="pvp-card-f">${fam(it)}</span><span class="pvp-card-n">${it.name}</span><small>${it.desc}</small></button>`; }).join("")}</nav>`;
+  el.innerHTML = head + body + `<div class="pvp-slots"><small>Ton build</small>${slots}</div>
+    <nav class="menu-list pvp-quit"><button class="mi" data-act="pvpQuit">Abandonner le duel</button></nav>`;
+  for (const c of el.querySelectorAll("canvas[data-icon]")) { const src = itemIconCanvas(c.dataset.icon), x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.drawImage(src, 0, 0); }
+  if (!done) { const b = el.querySelector(".pvp-card"); if (b && !(el.contains(document.activeElement) && document.activeElement.classList.contains("pvp-card"))) b.focus({ preventScroll: true }); }
+}
 function pvpUpdateDraft(dt) {
-  const d = PVP.draft, p = player;
+  const d = PVP.draft;
   if (!d || PVP.phase !== "draft") return;
   d.t -= dt;
   if (d.t <= 0) { pvpPick(pick(d.offers[d.step])); return; }
-  for (const o of PVP.peds || []) {
-    o.t += dt;
-    const near = Math.abs(p.x + p.w / 2 - o.x - 6) < 26 && Math.abs(p.y + p.h - o.y - 12) < 22;
-    if (near && !o.near && ITEM[o.id]) toast(`<b>${ITEM[o.id].name}</b> : ${ITEM[o.id].desc}<br><small>Reste dessus pour le prendre.</small>`, 3000, true);
-    o.near = near;
-    if (overlap(p, o) && p.onGround) { o.rest += dt; if (o.rest > 0.35) { pvpPick(o.id); return; } } else o.rest = 0;
-  }
+  // la barre du temps s'actualise sans redessiner les cartes
+  const bar = document.querySelector("#pvpDraftPanel .pvp-timer");
+  if (bar) bar.innerHTML = `<span style="width:${Math.max(0, d.t / PVP.pickTime * 100)}%"></span>${Math.max(0, Math.ceil(d.t))} s`;
 }
 
 // ----- Les arènes : plusieurs cartes, tirées au sort pour chaque match (la même pour les deux joueurs) -----
@@ -281,6 +291,7 @@ function pvpBeginFight(oppItems) {
   for (const id of PVP.myItems) if (ITEM[id]) items.add(id);
   computeStats(); renderItems();
   PVP.phase = "fight"; PVP.round = 0; PVP.score = [0, 0]; PVP.lastSeen = Date.now(); PVP.peds = [];
+  closeMenu(); document.body.classList.add("pvp-on"); document.body.classList.remove("pvp-drafting");
   pvpStartRound();
   toast(`Build de ${PVP.opp.pseudo} : ${(oppItems || []).map(id => ITEM[id] ? ITEM[id].name : id).join(", ")}`, 4000, true);
 }
@@ -439,7 +450,7 @@ function pvpDrawSlots() {
   around("showBiomeTitle", (o, ...a) => { if (gameMode === "pvp") return; return o(...a); });
   // le HUD habituel (lumière, pièces, carte…) laisse la place aux barres du duel
   around("closeMenu", (o, ...a) => { const r = o(...a); document.body.classList.toggle("pvp-on", gameMode === "pvp"); return r; });
-  around("openTitle", (o, ...a) => { document.body.classList.remove("pvp-on"); return o(...a); });
+  around("openTitle", (o, ...a) => { document.body.classList.remove("pvp-on", "pvp-drafting"); return o(...a); });
   around("renderHearts", (o, ...a) => { if (gameMode === "pvp") { if (typeof heartsEl !== "undefined") heartsEl.innerHTML = ""; return; } return o(...a); });
   around("saveGame", (o, quiet, ...a) => { if (gameMode === "pvp") return false; return o(quiet, ...a); });
   around("endRun", (o, ...a) => { if (gameMode === "pvp") return; return o(...a); });
@@ -461,7 +472,7 @@ function pvpDrawSlots() {
   around("pollMenuPad", (o, ...a) => {
     const r = o(...a), now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0; lastT = now;
-    if (gameMode !== "pvp" && PVP.phase !== "off") pvpUpdate(dt);
+    if ((gameMode !== "pvp" || screen === "draft") && PVP.phase !== "off") pvpUpdate(dt);
     return r;
   });
 
@@ -471,22 +482,8 @@ function pvpDrawSlots() {
     if (gameMode !== "pvp" || !["draft", "wait", "fight"].includes(PVP.phase)) return r;
     ctx.setTransform(S, 0, 0, S, 0, 0);
     const e = PVP.rival, ox = snap(cam.x), oy = snap(cam.y);
-    // les piédestaux du draft
-    for (const o2 of PVP.peds || []) {
-      const x = snap(o2.x - ox), y = snap(o2.y - oy), bob = Math.sin(o2.t * 2.4) * 1.5;
-      ctx.fillStyle = "rgba(242,212,90,0.18)"; ctx.fillRect(x - 3, y - 10, 18, 22);
-      ctx.fillStyle = "#3a3440"; ctx.fillRect(x - 1, y + 7, 14, 5);
-      ctx.fillStyle = "#6a6270"; ctx.fillRect(x, y + 7, 12, 1.33); ctx.fillRect(x + 2, y + 9, 8, 3);
-      drawItemIcon(o2.id, x + 2, snap(y - 6 + bob));
-      if (o2.rest > 0) { ctx.fillStyle = "#f2d45a"; ctx.fillRect(x, y + 13, 12 * Math.min(1, o2.rest / 0.35), 1.34); }
-    }
+    if (PVP.phase !== "fight") return r;
     pvpDrawSlots();
-    if (PVP.phase !== "fight") {
-      const msg = PVP.phase === "draft" ? `CHOIX ${PVP.draft.step + 1} SUR ${PVP.picks}  -  ${Math.max(0, Math.ceil(PVP.draft.t))} S` : `PRET - ON ATTEND ${PVP.opp.pseudo}`;
-      drawTinyText(VW / 2, 8, msg.slice(0, 40), "#f2d45a");
-      if (e && !e.hidden) { const q = at(e, a); drawTinyText(q.x - ox + e.w / 2, q.y - oy - 16, PVP.opp.pseudo.slice(0, 12), "#9fd0ff"); }
-      return r;
-    }
     // le nom et la barre de vie au-dessus du rival
     if (e && !e.hidden) {
       const q = at(e, a), x = q.x - ox + e.w / 2, y = q.y - oy - 9;
@@ -534,7 +531,8 @@ function pvpDrawSlots() {
     if (act === "pvpAgain") { PVP.phase = "lobby"; PVP.result = null; pvpSearch(null); return; }
     if (act && act.startsWith("pvpPick:")) { pvpPick(act.slice(8)); return; }
     if (act === "back" && (menuPanel === "pvp") && (PVP.phase === "search" || PVP.phase === "connect")) { pvpLeaveAll(); PVP.phase = "lobby"; }
-    if (act === "back" && menuPanel === "pvpDraft") { pvpAbandon(); showPanel("pvp"); return; }
+    if (act === "back" && menuPanel === "pvpDraft") return;                  // pas de retour arrière pendant le draft
+    if (act === "pvpQuit") { pvpAbandon(); return; }
     return o(act, ...a);
   });
   try { addEventListener("pagehide", () => { if (PVP.chan) PVP.chan.send("bye", {}); }); } catch (e) {}

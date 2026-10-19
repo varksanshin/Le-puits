@@ -366,3 +366,25 @@ body.ui-big .hud{zoom:var(--ui,1)}
 .menu-list .mi[disabled]{opacity:.4;pointer-events:none}
 body.pvp-on .hud > *:not(.toast):not(#toast):not(.toasts){visibility:hidden}
 body.pvp-on .toast{margin-bottom:9%}
+/* Draft du duel : trois cartes */
+.menu.pvpdraft-bg{background:rgba(8,6,12,.72)}
+.pvp-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:min(640px,100%)}
+.pvp-cards .mi.pvp-card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:12px 10px 14px;margin:0;border:1px solid rgba(233,225,207,.2);border-radius:10px;background:rgba(20,14,24,.85);min-height:150px}
+.pvp-cards .mi.pvp-card:focus,.pvp-cards .mi.pvp-card:hover{border-color:#f2d45a;background:rgba(60,44,20,.85);transform:translateY(-2px)}
+.pvp-ic{width:40px;height:50px;image-rendering:pixelated}
+.pvp-card .pvp-ic{width:48px;height:60px;margin-bottom:4px}
+.pvp-card-f{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ash)}
+.pvp-card-n{font-size:18px;line-height:1.15}
+.pvp-card small{display:block;margin:0;text-transform:none;letter-spacing:0;font-size:12px;line-height:1.4;color:var(--ash)}
+.pvp-timer{position:relative;margin:0;width:min(640px,100%);height:18px;border-radius:9px;background:rgba(233,225,207,.08);font-family:var(--font-mono);font-size:11px;color:#140e18;text-align:center;line-height:18px;overflow:hidden}
+.pvp-timer span{position:absolute;left:0;top:0;bottom:0;background:#f2b54a;z-index:-0}
+.pvp-timer{isolation:isolate}.pvp-timer span{z-index:-1}
+.pvp-slots{display:flex;align-items:center;gap:6px}
+.pvp-slots small{font-family:var(--font-mono);font-size:11px;color:var(--ash);margin-right:6px}
+.pvp-slot{display:grid;place-items:center;width:40px;height:46px;border:1px dashed rgba(233,225,207,.25);border-radius:6px}
+.pvp-slot.on{border:1px solid #f2d45a;background:rgba(242,212,90,.1)}
+.pvp-slot.next{border-color:#f2b54a;border-style:solid}
+.pvp-slot .pvp-ic{width:24px;height:30px}
+.pvp-quit .mi{font-size:14px;opacity:.7}
+@media (max-width:620px){.pvp-cards{grid-template-columns:1fr}.pvp-cards .mi.pvp-card{flex-direction:row;text-align:left;min-height:0;flex-wrap:wrap}.pvp-card .pvp-ic{width:32px;height:40px}}
+body.pvp-drafting #touchpad{display:none}
