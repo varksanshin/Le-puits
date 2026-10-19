@@ -365,3 +365,4 @@ body.ui-big .hud{zoom:var(--ui,1)}
 .pvp-rank tr.me td{color:#f2b54a}
 .menu-list .mi[disabled]{opacity:.4;pointer-events:none}
 body.pvp-on .hud > *:not(.toast):not(#toast):not(.toasts){visibility:hidden}
+body.pvp-on .toast{margin-bottom:9%}

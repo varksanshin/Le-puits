@@ -20,7 +20,7 @@ const PVP = {
 };
 // Objets qui n'ont pas de sens en duel (butin, exploration, ténèbres…)
 const PVP_BAN = new Set(["lapin", "trousseau", "bourse", "aimant", "sceau", "carte", "boussole", "fer", "tirelire", "sel", "couronne", "avarice",
-  "oeil", "de", "eaubenite", "lanterne", "sablier", "miroir", "phenix", "affamee"]);
+  "oeil", "de", "eaubenite", "lanterne", "sablier", "miroir", "phenix", "affamee", "epines"]);
 const pvpPool = () => ITEMS.filter(it => !it.soon && !PVP_BAN.has(it.id));
 let pvpPseudo = null;
 try { pvpPseudo = localStorage.getItem("lepuits.pseudo"); } catch (e) {}
@@ -159,7 +159,10 @@ function pvpOnMsg(ev, m) {
   if (ev === "bye") { if (PVP.phase === "fight" || PVP.phase === "draft" || PVP.phase === "wait") pvpForfeit(); }
 }
 
-// ----- Le draft -----
+// ----- Le draft, directement dans l'arène -----
+/* Trois piédestaux apparaissent près de toi : marche sur un objet pour le prendre (ou attends : au bout de 20 s,
+   le jeu choisit pour toi). Cinq fois de suite. Une ligne en bas de l'écran montre tes 5 emplacements.
+   Pendant le draft, on voit l'adversaire bouger, mais personne ne peut toucher personne. */
 function pvpStartDraft() {
   const rand = rng((PVP.seed ^ hashStr(PVP.me.pid)) >>> 0 || 1);
   const pool = pvpPool(), offers = [];
@@ -170,88 +173,132 @@ function pvpStartDraft() {
     o.forEach(id => used.add(id)); offers.push(o);
   }
   PVP.draft = { offers, step: 0, t: PVP.pickTime };
-  PVP.phase = "draft"; PVP.myItems = [];
-  showPanel("pvpDraft"); renderDraft();
+  PVP.myItems = [];
+  pvpEnterArena();
+  PVP.phase = "draft";
+  pvpPlacePeds();
+  toast(`Arène : <b>${PVP.arenaName}</b>. Marche sur un objet pour le prendre.`, 3200, true);
+}
+// Trois piédestaux sur le sol, de ton côté de l'arène
+function pvpPlacePeds() {
+  const d = PVP.draft; if (!d || d.step >= PVP.picks) { PVP.peds = []; return; }
+  const [sc] = PVP.spawns[PVP.host ? 0 : 1], dir = PVP.host ? 1 : -1;
+  PVP.peds = d.offers[d.step].map((id, i) => {
+    const c = sc + dir * (3 + i * 3), r = pvpFloorRow(c);
+    burst(c * T + 8, r * T + 6, 14, "#f2d45a", 80);
+    return { id, x: c * T + 2, y: r * T + 4, w: 12, h: 12, rest: 0, near: false, t: i };
+  });
+}
+// La case libre posée sur le sol d'une colonne (en partant du haut)
+function pvpFloorRow(c) {
+  for (let r = 1; r < MH - 1; r++) if (tile(c, r) === "." && tile(c, r - 1) === "." && (solid(tile(c, r + 1)) || tile(c, r + 1) === "-") && tile(c, r + 1) !== "-") return r;
+  for (let r = 1; r < MH - 1; r++) if (tile(c, r) === "." && solid(tile(c, r + 1))) return r;
+  return MH - 3;
 }
 function pvpPick(id) {
   if (PVP.phase !== "draft") return;
   const d = PVP.draft, offer = d.offers[d.step];
   if (!offer.includes(id)) return;
   PVP.myItems.push(id); d.step++; d.t = PVP.pickTime;
+  if (ITEM[id]) { items.add(id); computeStats(); renderItems(); }
+  const ped = (PVP.peds || []).find(o => o.id === id);
+  if (ped) burst(ped.x + 6, ped.y, 26, "#f2d45a", 120);
   if (typeof SFX !== "undefined") SFX.play("item");
+  if (ITEM[id]) toast(`<b>${ITEM[id].name}</b><br><i>${ITEM[id].desc}</i>`, 2600, true);
   if (d.step >= PVP.picks) {
+    PVP.peds = [];
     PVP.phase = "wait"; PVP.chan && PVP.chan.send("draft", { items: PVP.myItems });
     pvpMaybeGo();
-  }
-  renderDraft();
+  } else pvpPlacePeds();
 }
 function pvpMaybeGo() {
   if (PVP.phase !== "wait" || !PVP.oppItems) return;
   if (PVP.host) { PVP.chan.send("go", { items: PVP.myItems }); pvpBeginFight(PVP.oppItems); }
 }
-function renderDraft() {
-  const el = document.getElementById("pvpDraftPanel"); if (!el) return;
-  const d = PVP.draft;
-  const card = id => { const it = ITEM[id]; return `<button class="mi pvp-card" data-act="pvpPick:${id}"><span class="pvp-card-n">${it.name}</span><small>${it.desc}</small></button>`; };
-  const picks = PVP.myItems.map(id => `<span class="pvp-chip">${ITEM[id].name}</span>`).join("") || `<span class="pvp-chip empty">aucun</span>`;
-  if (PVP.phase === "draft") {
-    el.innerHTML = `<div><span class="kicker">Duel contre ${PVP.opp.pseudo} · ${PVP.opp.rating}</span><div class="big small">Choix ${d.step + 1} / ${PVP.picks}</div></div>
-      <p class="pvp-timer">${Math.ceil(d.t)} s</p>
-      <nav class="menu-list pvp-cards">${d.offers[d.step].map(card).join("")}</nav>
-      <p class="pvp-picks"><small>Ton build</small>${picks}</p>`;
-    const b = el.querySelector("button"); if (b && !el.contains(document.activeElement)) b.focus({ preventScroll: true });
-  } else {
-    el.innerHTML = `<div><span class="kicker">Duel contre ${PVP.opp.pseudo}</span><div class="big small">Build prêt</div></div>
-      <p class="pvp-picks"><small>Ton build</small>${picks}</p>
-      <p class="pvp-wait">${PVP.oppItems ? "Ton adversaire est prêt. Le combat commence…" : "En attente de ton adversaire…"}</p>`;
+function renderDraft() {}
+function pvpUpdateDraft(dt) {
+  const d = PVP.draft, p = player;
+  if (!d || PVP.phase !== "draft") return;
+  d.t -= dt;
+  if (d.t <= 0) { pvpPick(pick(d.offers[d.step])); return; }
+  for (const o of PVP.peds || []) {
+    o.t += dt;
+    const near = Math.abs(p.x + p.w / 2 - o.x - 6) < 26 && Math.abs(p.y + p.h - o.y - 12) < 22;
+    if (near && !o.near && ITEM[o.id]) toast(`<b>${ITEM[o.id].name}</b> : ${ITEM[o.id].desc}<br><small>Reste dessus pour le prendre.</small>`, 3000, true);
+    o.near = near;
+    if (overlap(p, o) && p.onGround) { o.rest += dt; if (o.rest > 0.35) { pvpPick(o.id); return; } } else o.rest = 0;
   }
 }
 
-// ----- L'arène -----
-function pvpArena() {
-  const W = 52, H = 20, g = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => (r === 0 || r >= H - 2 || c === 0 || c === W - 1) ? "#" : "."));
-  const plat = (c0, c1, r, ch = "-") => { for (let c = c0; c <= c1; c++) g[r][c] = ch; };
-  plat(6, 12, 13); plat(W - 13, W - 7, 13); plat(20, 31, 10); plat(3, 7, 7); plat(W - 8, W - 4, 7); plat(22, 29, 5);
-  plat(16, 17, 15, "#"); plat(W - 18, W - 17, 15, "#"); g[16][16] = "#"; g[16][W - 17] = "#"; g[16][17] = "#"; g[16][W - 18] = "#";
-  return { v: 1, base: "pvp-arene", w: W, h: H, rows: g.map(r => r.join("")), ents: [{ t: "spawn", x: 5, y: H - 3 }], biomes: [{ x: 0, y: 0, w: W, h: H, id: "antre" }] };
+// ----- Les arènes : plusieurs cartes, tirées au sort pour chaque match (la même pour les deux joueurs) -----
+/* Chaque arène est décrite pour sa moitié gauche (26 colonnes), puis recopiée en miroir : le combat est toujours équitable.
+   « - » = planche (on passe à travers par en dessous), bloc = roche. Le sol est en bas (rangées 18 et 19). */
+const PVP_ARENAS = [
+  { name: "La Fosse", biome: "antre", planks: [[6, 12, 13], [20, 25, 10], [3, 7, 7], [22, 25, 5]], blocks: [[16, 17, 15, 17]] },
+  { name: "Les Piliers", biome: "mines", planks: [[2, 8, 12], [11, 18, 8], [21, 25, 14], [16, 25, 4]], blocks: [[9, 10, 9, 17], [19, 20, 12, 17]] },
+  { name: "La Tour", biome: "entree", planks: [[3, 9, 14], [12, 18, 11], [4, 10, 8], [14, 25, 6], [18, 25, 15], [1, 4, 4]], blocks: [] },
+  { name: "Les Ruines", biome: "spores", planks: [[8, 13, 11], [18, 25, 10], [2, 6, 7], [15, 20, 5]], blocks: [[1, 6, 16, 17], [12, 15, 16, 17], [22, 25, 15, 17]] },
+  { name: "La Grotte noyée", biome: "noyee", planks: [[2, 8, 13], [13, 20, 13], [4, 9, 9], [18, 25, 8]], blocks: [[10, 15, 1, 5], [24, 25, 1, 7], [17, 18, 16, 17]] },
+];
+function pvpArena(seed) {
+  const A = PVP_ARENAS[(seed >>> 0) % PVP_ARENAS.length], W = 52, H = 20, half = W / 2;
+  const g = Array.from({ length: H }, (_, r) => Array.from({ length: half }, (_, c) => (r === 0 || r >= H - 2 || c === 0) ? "#" : "."));
+  for (const [c0, c1, r] of A.planks) for (let c = c0; c <= c1; c++) if (g[r][c] === ".") g[r][c] = "-";
+  for (const [c0, c1, r0, r1] of A.blocks) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) g[r][c] = "#";
+  const rows = g.map(r => r.join("") + [...r].reverse().join(""));
+  return { v: 1, base: "pvp-arene", name: A.name, w: W, h: H, rows, ents: [{ t: "spawn", x: 4, y: H - 3 }], biomes: [{ x: 0, y: 0, w: W, h: H, id: A.biome }] };
 }
-const PVP_SPAWNS = [[5, 17], [46, 17]];
-function pvpBeginFight(oppItems) {
-  if (PVP.phase === "fight") return;
-  PVP.oppItems = oppItems;
+function pvpEnterArena() {
   if (!PVP.saved) PVP.saved = { level, gameMode, metaOff: meta.off };
-  level = pvpArena(); gameMode = "pvp";
+  level = pvpArena(PVP.seed); gameMode = "pvp"; PVP.arenaName = level.name;
   meta.off = true;
   try { resetRun(); } finally { meta.off = PVP.saved.metaOff; }
   for (const s of SKILLS) grantSkill(s.id);
+  items = new Set(); computeStats(); renderItems();
+  dark = 10; darkLocked = true; darkShown = -1; renderDark();
+  PVP.spawns = [4, MW - 5].map(c => [c, pvpFloorRow(c)]);
+  PVP.round = 0; PVP.score = [0, 0]; PVP.lastSeen = Date.now(); PVP.countdown = 0; PVP.over = 0;
+  pvpPlaceFighters();
+  closeMenu(); document.body.classList.add("pvp-on");
+}
+function pvpPlaceFighters() {
+  const side = PVP.host ? 0 : 1, [c, r] = PVP.spawns[side], [oc, or] = PVP.spawns[1 - side];
+  enemies = []; projectiles = []; shots = []; hazards = [];
+  const p = player;
+  p.x = c * T + 3; p.y = (r + 1) * T - p.h; p.vx = p.vy = 0; p.prevX = p.x; p.prevY = p.y; p.face = side ? -1 : 1;
+  p.dead = false; p.invuln = 0; p.dashTimer = 0; p.diving = false; p.grapple = null; p.phasing = false;
+  PVP.maxHp = stats.maxHp * PVP.hpPerHeart; PVP.hp = PVP.maxHp; PVP.shield = has("bouclier");
+  p.hp = stats.maxHp;                                         // les cœurs suivent les PV du duel (Fiole de berserker…)
+  const e = makeEnemy({ type: "rival", cx: oc, cy: or });
+  e.rival = true; e.scaled = true; e.hp = 1e9; e.damage = 0; e.dir = side ? 1 : -1;
+  enemies.push(e); PVP.rival = e; PVP.oppState = null;
+  cam.x = p.x - VW / 2; cam.y = p.y - VH / 2;
+}
+function pvpBeginFight(oppItems) {
+  if (PVP.phase === "fight") return;
+  PVP.oppItems = oppItems;
+  if (gameMode !== "pvp") pvpEnterArena();                 // (au cas où le draft n'est pas passé par l'arène)
   for (const id of PVP.myItems) if (ITEM[id]) items.add(id);
   computeStats(); renderItems();
-  dark = 10; darkLocked = true; darkShown = -1; renderDark();
-  PVP.phase = "fight"; PVP.round = 0; PVP.score = [0, 0]; PVP.lastSeen = Date.now();
-  closeMenu();
+  PVP.phase = "fight"; PVP.round = 0; PVP.score = [0, 0]; PVP.lastSeen = Date.now(); PVP.peds = [];
   pvpStartRound();
   toast(`Build de ${PVP.opp.pseudo} : ${(oppItems || []).map(id => ITEM[id] ? ITEM[id].name : id).join(", ")}`, 4000, true);
 }
 function pvpStartRound() {
   PVP.round++;
-  const side = PVP.host ? 0 : 1, [c, r] = PVP_SPAWNS[side], [oc, or] = PVP_SPAWNS[1 - side];
-  enemies = []; projectiles = []; shots = []; hazards = [];
-  const p = player;
-  p.x = c * T + 3; p.y = (r + 1) * T - p.h; p.vx = p.vy = 0; p.prevX = p.x; p.prevY = p.y; p.face = side ? -1 : 1;
-  p.dead = false; p.hp = 99; p.invuln = 0; p.dashTimer = 0; p.diving = false; p.grapple = null; p.phasing = false;
-  PVP.maxHp = stats.maxHp * PVP.hpPerHeart; PVP.hp = PVP.maxHp;
-  const e = makeEnemy({ type: "rival", cx: oc, cy: or });
-  e.rival = true; e.scaled = true; e.hp = 1e9; e.damage = 0; e.dir = side ? 1 : -1;
-  enemies.push(e); PVP.rival = e; PVP.oppState = null;
-  cam.x = p.x - VW / 2; cam.y = p.y - VH / 2;
+  pvpPlaceFighters();
   PVP.countdown = 3; PVP.roundT = PVP.roundTime; PVP.over = 0;
   renderHearts();
 }
 function pvpTakeHit(m) {
   const p = player;
   if (PVP.phase !== "fight" || PVP.countdown > 0 || PVP.over > 0 || p.invuln > 0 || p.phasing || (p.dashTimer > 0 && (has("voile") || has("lamevent")))) return;
+  if (PVP.shield) {                                          // Bouclier de lumière : un coup bloqué par manche
+    PVP.shield = false; p.invuln = 0.5; burst(p.x + p.w / 2, p.y + p.h / 2, 16, "#fff6c8", 90); popText(p.x + p.w / 2, p.y - 4, "BLOQUE", "#fff6c8"); return;
+  }
   const d = Math.max(1, Math.round((+m.d || 0) * PVP.dmgScale));
   PVP.hp = Math.max(0, PVP.hp - d);
+  p.hp = Math.max(1, Math.ceil(PVP.hp / PVP.hpPerHeart));
   const dir = Math.sign(m.dir) || -p.face, kt = stats.knockTaken;
   p.vx = dir * 170 * kt; p.vy = m.down ? 120 : m.up ? -280 : -200 * Math.max(0.5, kt); p.hurt = 0.2 * Math.max(0.4, kt);
   p.invuln = 0.35; p.jumping = false; p.dashTimer = 0; p.charge = 0; p.chargeArmed = false; p.grapple = null;
@@ -301,18 +348,15 @@ function pvpExitArena() {
 
 // ----- À chaque image du duel -----
 function pvpUpdate(dt) {
-  if (PVP.phase === "draft" && PVP.draft) {
-    PVP.draft.t -= dt;
-    if (PVP.draft.t <= 0) pvpPick(pick(PVP.draft.offers[PVP.draft.step]));
-    else if (Math.ceil(PVP.draft.t) !== PVP.draft.shown) { PVP.draft.shown = Math.ceil(PVP.draft.t); renderDraft(); }
-  }
+  if (PVP.phase === "draft") pvpUpdateDraft(dt);
   // un petit signe de vie pendant le draft, et l'abandon si l'autre a disparu
   if ((PVP.phase === "draft" || PVP.phase === "wait") && PVP.chan) {
     PVP.hbT = (PVP.hbT || 0) - dt;
     if (PVP.hbT <= 0) { PVP.hbT = 3; PVP.chan.send("hb", {}); }
     if (Date.now() - PVP.lastSeen > 20000) { pvpForfeit(); return; }
   }
-  if (PVP.phase !== "fight") return;
+  if (PVP.phase !== "fight" && PVP.phase !== "draft" && PVP.phase !== "wait") return;
+  if (PVP.phase !== "fight") { pvpSendState(); PVP.escT = Math.max(0, PVP.escT - dt); return; }
   if (PVP.countdown > 0) PVP.countdown -= dt;
   else if (PVP.over > 0) {
     PVP.over -= dt;
@@ -326,18 +370,35 @@ function pvpUpdate(dt) {
       else { const loser = mine < theirs ? PVP.me.pid : PVP.opp.pid; PVP.chan.send("ko", { round: PVP.round, loser }); pvpRoundOver(loser === PVP.me.pid ? 1 : 0); }
     }
   }
-  // envoyer mon état
-  const p = player, now = Date.now();
-  if (now - PVP.lastSend > 1000 / PVP.sendHz && PVP.chan) {
-    PVP.lastSend = now;
-    PVP.chan.send("st", { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, vx: Math.round(p.vx), vy: Math.round(p.vy), f: p.face, g: p.onGround ? 1 : 0,
-      a: p.atkTimer > 0 ? p.atkDir : 0, ch: p.charge > 0.2 ? 1 : 0, d: p.dashTimer > 0 ? 1 : 0, ph: p.phasing ? 1 : 0, dv: p.diving ? 1 : 0, hp: PVP.hp, mx: PVP.maxHp, r: PVP.round });
-  }
+  pvpSendState();
   // l'adversaire quitte sans prévenir
-  if (now - PVP.lastSeen > 12000) pvpForfeit();
+  if (Date.now() - PVP.lastSeen > 12000) pvpForfeit();
   PVP.escT = Math.max(0, PVP.escT - dt);
 }
+// envoyer mon état (position, attaque, PV), 15 fois par seconde
+function pvpSendState() {
+  const p = player, now = Date.now();
+  if (!p || !PVP.chan || now - PVP.lastSend < 1000 / PVP.sendHz) return;
+  PVP.lastSend = now;
+  PVP.chan.send("st", { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, vx: Math.round(p.vx), vy: Math.round(p.vy), f: p.face, g: p.onGround ? 1 : 0,
+    a: p.atkTimer > 0 ? p.atkDir : 0, ch: p.charge > 0.2 ? 1 : 0, d: p.dashTimer > 0 ? 1 : 0, ph: p.phasing ? 1 : 0, dv: p.diving ? 1 : 0, hp: PVP.hp, mx: PVP.maxHp, r: PVP.round });
+}
 
+// La ligne des 5 objets en bas de l'écran (et ceux de l'adversaire pendant le combat)
+function pvpDrawSlots() {
+  const row = (ids, x0, label, col, n) => {
+    ctx.fillStyle = "rgba(10,8,14,0.7)"; ctx.fillRect(x0 - 3, VH - 22, n * 15 + 4, 18);
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * 15, y = VH - 20, id = ids[i];
+      ctx.fillStyle = id ? "rgba(242,212,90,0.14)" : "rgba(233,225,207,0.06)"; ctx.fillRect(x, y, 13, 14);
+      ctx.strokeStyle = id ? col : "rgba(233,225,207,0.22)"; ctx.lineWidth = 0.67; ctx.strokeRect(x + 0.33, y + 0.33, 12.33, 13.33);
+      if (id && ITEM[id]) drawItemIcon(id, x + 2.5, y + 2);
+    }
+    if (label) drawTinyText(x0 + n * 7.5 - 1, VH - 29, label, col);
+  };
+  row(PVP.myItems, 8, "TON BUILD", "#f2d45a", PVP.picks);
+  if (PVP.phase === "fight" && PVP.oppItems) row(PVP.oppItems, VW - 8 - PVP.picks * 15 + 1, (PVP.opp.pseudo || "").slice(0, 12).toUpperCase(), "#9fd0ff", PVP.picks);
+}
 (() => {
   const around = (name, f) => {
     let orig; try { orig = eval(name); } catch (e) { return; }
@@ -407,9 +468,25 @@ function pvpUpdate(dt) {
   // ----- L'affichage du duel -----
   around("draw", (o, a, ...rest) => {
     const r = o(a, ...rest);
-    if (gameMode !== "pvp" || PVP.phase !== "fight") return r;
+    if (gameMode !== "pvp" || !["draft", "wait", "fight"].includes(PVP.phase)) return r;
     ctx.setTransform(S, 0, 0, S, 0, 0);
     const e = PVP.rival, ox = snap(cam.x), oy = snap(cam.y);
+    // les piédestaux du draft
+    for (const o2 of PVP.peds || []) {
+      const x = snap(o2.x - ox), y = snap(o2.y - oy), bob = Math.sin(o2.t * 2.4) * 1.5;
+      ctx.fillStyle = "rgba(242,212,90,0.18)"; ctx.fillRect(x - 3, y - 10, 18, 22);
+      ctx.fillStyle = "#3a3440"; ctx.fillRect(x - 1, y + 7, 14, 5);
+      ctx.fillStyle = "#6a6270"; ctx.fillRect(x, y + 7, 12, 1.33); ctx.fillRect(x + 2, y + 9, 8, 3);
+      drawItemIcon(o2.id, x + 2, snap(y - 6 + bob));
+      if (o2.rest > 0) { ctx.fillStyle = "#f2d45a"; ctx.fillRect(x, y + 13, 12 * Math.min(1, o2.rest / 0.35), 1.34); }
+    }
+    pvpDrawSlots();
+    if (PVP.phase !== "fight") {
+      const msg = PVP.phase === "draft" ? `CHOIX ${PVP.draft.step + 1} SUR ${PVP.picks}  -  ${Math.max(0, Math.ceil(PVP.draft.t))} S` : `PRET - ON ATTEND ${PVP.opp.pseudo}`;
+      drawTinyText(VW / 2, 8, msg.slice(0, 40), "#f2d45a");
+      if (e && !e.hidden) { const q = at(e, a); drawTinyText(q.x - ox + e.w / 2, q.y - oy - 16, PVP.opp.pseudo.slice(0, 12), "#9fd0ff"); }
+      return r;
+    }
     // le nom et la barre de vie au-dessus du rival
     if (e && !e.hidden) {
       const q = at(e, a), x = q.x - ox + e.w / 2, y = q.y - oy - 9;
