@@ -162,10 +162,7 @@ function updateElements(dt) {
   // Coffres : rester devant, ou frapper
   for (const ch of chests) {
     if (ch.open) continue;
-    if (overlap(p, ch) && p.onGround) {
-      ch.rest += dt;
-      if (ch.rest >= 0.35 || p.atkTimer > 0) openChest(ch);
-    } else ch.rest = 0;
+    if (actOffer(ch, "OUVRIR", overlap(p, ch)) || (p.atkTimer > 0 && overlap(attackBox(p.x, p.y), ch))) openChest(ch);
   }
   // Tablettes d'histoire
   for (const l of lores) {

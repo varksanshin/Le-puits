@@ -10,7 +10,7 @@
    Ce qui est synchronisé : partie en cours, Héritage, bestiaire, fins obtenues, records de speedrun.
    Les réglages (touches, son, plein écran…) restent propres à chaque appareil.
    Côté Supabase : tables cloud_saves et cloud_devices, fonctions cloud_create / cloud_push / cloud_pull / cloud_link. */
-const CLOUD_KEY = "lepuits.cloud", CLOUD_SYNCED = ["lepuits.heritage", "lepuits.bestiaire", "lepuits.records", "lepuits.pb", "lepuits.partie", "lepuits.partie.gone"];
+const CLOUD_KEY = "lepuits.cloud", CLOUD_SYNCED = ["lepuits.heritage", "lepuits.bestiaire", "lepuits.records", "lepuits.pb", "lepuits.partie", "lepuits.partie.gone", "lepuits.daily"];
 const CLOUD = { secret: null, code: null, last: 0, status: "", busy: false, pushed: null, every: 20 };
 try { Object.assign(CLOUD, JSON.parse(localStorage.getItem(CLOUD_KEY)) || {}); } catch (e) {}
 const saveCloud = () => { try { localStorage.setItem(CLOUD_KEY, JSON.stringify({ secret: CLOUD.secret, code: CLOUD.code, last: CLOUD.last, pushed: CLOUD.pushed })); } catch (e) {} };
@@ -87,6 +87,9 @@ function cloudMerge(a, b) {
       }
       out["lepuits.pb"] = JSON.stringify(m);
     } }
+  // Graine du jour : l'essai le plus récent (un essai par jour, sur tous les appareils)
+  { const x = A("lepuits.daily"), y = B("lepuits.daily");
+    if (x && y) out["lepuits.daily"] = JSON.stringify((y.at || 0) > (x.at || 0) ? y : x); }
   // Partie en cours : la plus récente (une partie terminée ou effacée compte aussi comme « récente »)
   { const ta = Math.max((A("lepuits.partie") || {}).at || 0, +a["lepuits.partie.gone"] || 0);
     const tb = Math.max((B("lepuits.partie") || {}).at || 0, +b["lepuits.partie.gone"] || 0);

@@ -12,7 +12,7 @@
 <div class="wrap">
   <header>
     <h1>Le <span>Puits</span></h1>
-    <div class="ver">Moteur · prototype 0.22</div>
+    <div class="ver">Moteur · prototype 0.23</div>
   </header>
 
   <div class="modebar">
@@ -54,7 +54,7 @@
           <button class="mi" data-act="story">Mode histoire</button>
           <button class="mi" data-act="chaos">Mode chaos<small>nouvelle map à chaque partie</small></button>
           <button class="mi" data-act="pvp">Duel en ligne<small>draft de 5 objets puis combat contre un joueur</small></button>
-          <button class="mi" data-act="daily">Graine du jour<small>la même map chaos pour tout le monde aujourd'hui</small></button>
+          <button class="mi" data-act="daily">Graine du jour<small>la même map pour tout le monde · un seul essai par jour</small></button>
           <button class="mi" data-act="heritage">Héritage<small>améliorations permanentes</small></button>
           <button class="mi" data-act="sync">Synchroniser<small>ta progression sur PC et téléphone</small></button>
           <button class="mi" data-act="bestiary">Bestiaire</button>
@@ -144,8 +144,8 @@
   <div class="touchpad" id="touchpad" hidden>
     <div class="tp-dpad" id="tpDpad" aria-label="Croix directionnelle"><span class="tp-knob" id="tpKnob"></span></div>
     <div class="tp-btns">
-      <button data-tp="phase">Phase</button><button data-tp="grapple">Grappin</button><button data-tp="pause" class="tp-pause">❚❚</button><button data-tp="full" class="tp-full" aria-label="Plein écran">⛶</button>
-      <button data-tp="bolt">Tir</button><button data-tp="dash">Dash</button>
+      <button data-tp="phase">Phase</button><button data-tp="grapple">Grappin</button><button data-tp="action" class="tp-act">Action</button><button data-tp="pause" class="tp-pause">❚❚</button><button data-tp="full" class="tp-full" aria-label="Plein écran">⛶</button>
+      <button data-tp="bolt">Tir</button><button data-tp="dash">Dash</button><span></span>
       <button data-tp="attack" class="big">Frapper</button><button data-tp="jump" class="big">Sauter</button>
     </div>
   </div>
@@ -245,7 +245,17 @@
       </div>
     </section>
     <section>
-      <h2>Nouveau dans la 0.22</h2>
+      <h2>Nouveau dans la 0.23</h2>
+      <ul>
+        <li>Touche Action (Q ou Entrée, LT à la manette, bouton « Action » au tactile, ou Haut devant l'objet) : prendre, ouvrir, acheter, se reposer, entrer. Une invite s'affiche au-dessus de ce qu'on peut utiliser. Plus besoin de rester immobile</li>
+        <li>Les objets tombent au sol avec leur icône : on les ramasse avec Action</li>
+        <li>Moins d'objets en jeu (les objets utilitaires sont retirés des tirages), mais tous se combinent : les effets de projectiles (×3, téléguidés, perçants, rebonds, géants) s'appliquent à tous tes projectiles, et les effets de coups (poison, feu, foudre, vol de vie, critiques…) à tous tes coups</li>
+        <li>Bien moins d'objets gratuits (coffres, mimiques, autels, sacrifices), et le fond du puits est bien plus dur : monstres jusqu'à 2 fois plus résistants, plus de champions, et dans l'antre tout frappe plus fort</li>
+        <li>Un gardien par zone : Reine des larves (entrée), Contremaître ou Geôlier (mines), la nouvelle Gorgone-Mère (zone noyée), Roi-Champignon ou Feu-Mère adoucie (profondeurs), Ombre affamée ou le nouveau Templier déchu (antre). La relique reste au hasard en chaos</li>
+        <li>Graine du jour : la même carte et le même contenu pour tout le monde, un seul essai par jour (sur tous tes appareils), sans Héritage</li>
+        <li>Corrigé : des clés apparaissaient en repassant certaines frontières de la carte (synergie Explorateur)</li>
+      </ul>
+      <h2>Dans la 0.22</h2>
       <ul>
         <li>Moins d'objets, mais chacun compte. Chaque gardien vaincu laisse sa relique et trois objets au choix : tu n'en prends qu'un, les autres s'enchaînent. Une clé brise une chaîne (le reliquaire)</li>
         <li>Les autels violets deviennent des autels des ombres : un seul au plus par profondeur, et l'objet se paie avec un peu de lumière. Coffres dorés, coffres et mimiques donnent moins souvent des objets</li>
@@ -407,6 +417,8 @@
 <script src="js/32-en-ligne.js"></script>
 <script src="js/33-synchro.js"></script>
 <script src="js/34-pvp.js"></script>
+<script src="js/35-objets-au-sol.js"></script>
+<script src="js/36-gardiens-zones.js"></script>
 <script src="js/29-demarrage.js"></script>
 </body>
 </html>

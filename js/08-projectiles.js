@@ -18,6 +18,7 @@ function fireBolt() {
 }
 function updateProjectiles(dt) {
   for (const q of projectiles) {
+    if (!q._mods && typeof modProjectile === "function") modProjectile(q);
     q.life -= dt; q.vy += q.grav * dt;
     steerProjectile(q, dt);
     q.x += q.vx * dt;
@@ -38,6 +39,7 @@ function updateProjectiles(dt) {
       if (e.dead || e.hidden || q.hits.has(e) || !overlap(q, e)) continue;
       q.hits.add(e);
       hitEnemy(e, q.dmg, Math.sign(q.vx) || 1, { power: 0.5, freeze: 0.02 });
+      if (typeof onProjHit === "function") onProjHit(q, e);
       if (q.kind === "star") burst(q.x + 3, q.y + 3, 12, "#f2d45a", 100);
       if (!q.pierce) { q.life = 0; break; }
     }

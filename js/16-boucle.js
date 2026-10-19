@@ -15,9 +15,10 @@ function stepAll() {
   player.prevX = player.x; player.prevY = player.y;
   for (const e of enemies) { e.prevX = e.x; e.prevY = e.y; }
   for (const bk of buckets) bk.prevY = bk.y;
+  actStep();
   updateBuckets(STEP);
   updatePlayer(STEP); updateEnemies(STEP); updateFloaters(STEP); updateProjectiles(STEP); updateShots(STEP); updateWorld(STEP); updateParticles(STEP);
-  input.jumpPressed = false; input.attackPressed = false; input.dashPressed = false; input.boltPressed = false; input.grapplePressed = false; input.phasePressed = false;
+  input.actionPressed = false; input.jumpPressed = false; input.attackPressed = false; input.dashPressed = false; input.boltPressed = false; input.grapplePressed = false; input.phasePressed = false;
 }
 function frame(now) {
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000 || 0)); last = now; frameDt = dt;
@@ -35,7 +36,7 @@ function frame(now) {
   readInput();
   if (input.pad !== lastPad) { lastPad = input.pad; padEl.textContent = input.pad ? "Manette connectée" : "Clavier"; padWrap.classList.toggle("on", input.pad); }
   if (input.pausePressed) { openPause(); requestAnimationFrame(frame); return; }
-  if (input.resetPressed) resetRun();
+  if (input.resetPressed) { if (globalThis.DAILY_RUN) menuAction("restart"); else resetRun(); }
   updateRunClock(dt);
   renderDark(); renderClock();
   shakeT = Math.max(0, shakeT - dt); if (shakeT <= 0) shakeM = 0;

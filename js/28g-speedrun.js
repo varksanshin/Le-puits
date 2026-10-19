@@ -17,20 +17,25 @@ const savePbs = () => { try { localStorage.setItem(PB_KEY, JSON.stringify(pbs));
 const srCategory = () => gameMode === "chaos" ? `chaos-${chaosSeed}` : "histoire";
 let srLive = [];                                    // les temps intermédiaires de la run en cours, avec leur écart
 
-// La graine du jour : la même pour tout le monde, le même jour
+// La graine du jour : la même pour tout le monde, le même jour (jour en temps universel, pour que Bruxelles et Montréal aient la même)
+const dailyDay = (d = new Date()) => `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+globalThis.DAILY_RUN = false;
+function dailyRecord() { try { return JSON.parse(localStorage.getItem("lepuits.daily")) || null; } catch (e) { return null; } }
 function dailySeed(d = new Date()) {
-  const s = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  const s = dailyDay(d);
   let h = 2166136261;
   for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   return (h >>> 0) % 1e9;
 }
-function startChaosSeed(seed) {
+function startChaosSeed(seed, daily) {
   if (gameMode === "story") storyLevel = level;
   const lv = buildChaosLevel(seed);
   if (!lv) { toast("Le puits refuse de se former… réessaie.", 2400); return false; }
   gameMode = "chaos"; level = lv; chaosSeed = lv.seed;
+  DAILY_RUN = !!daily;
+  if (daily) try { localStorage.setItem("lepuits.daily", JSON.stringify({ day: dailyDay(), seed: chaosSeed, at: Date.now() })); } catch (e) {}
   resetRun(); closeMenu();
-  toast(`Graine du jour · ${chaosSeed}${SPEEDRUN ? " · mode speedrun" : ""}`, 3200);
+  toast(daily ? `Graine du jour · un seul essai aujourd'hui. Bonne chance !` : `Graine ${chaosSeed}${SPEEDRUN ? " · mode speedrun" : ""}`, 3600);
   return true;
 }
 
@@ -69,6 +74,11 @@ function startChaosSeed(seed) {
   // Fin de run : nouveau record ?
   around("endRun", (o, kind, ...a) => {
     const r = o(kind, ...a);
+    if (DAILY_RUN && runOver) {
+      const rec = dailyRecord() || { day: dailyDay() };
+      rec.result = kind === "win" ? `victoire en ${fmtTime(runClock)}` : `mort à ${Math.round(100 * maxDepth / Math.max(1, MH))} % de profondeur`;
+      try { localStorage.setItem("lepuits.daily", JSON.stringify({ ...rec, at: Date.now() })); } catch (e) {}
+    }
     if (!SPEEDRUN) return r;
     const el = document.getElementById("endStats"), cat = srCategory();
     let line = "";
@@ -89,7 +99,17 @@ function startChaosSeed(seed) {
 
   // Menus : graine du jour, option speedrun
   around("menuAction", (o, act, ...a) => {
-    if (act === "daily") { const go = () => startChaosSeed(dailySeed()); if (screen === "title") startIntro(go); else go(); return; }
+    if (act === "daily") {
+      const rec = dailyRecord();
+      if (rec && rec.day === dailyDay()) {
+        toast(`Tu as déjà joué la graine du jour${rec.result ? ` (${rec.result})` : ""}. Une nouvelle carte t'attend demain !`, 3400);
+        return;
+      }
+      const go = () => startChaosSeed(dailySeed(), true); if (screen === "title") startIntro(go); else go(); return;
+    }
+    // un seul essai : pas de « Rejouer » ni de « Recommencer » sur la graine du jour
+    if (DAILY_RUN && (act === "again" || act === "restart")) { DAILY_RUN = false; openTitle(); toast("Un seul essai par jour sur la graine du jour. Reviens demain !", 3000); return; }
+    if (act === "story" || act === "chaos") DAILY_RUN = false;
     if (act === "speedrun") {
       SPEEDRUN = !SPEEDRUN;
       try { localStorage.setItem(SR_KEY, SPEEDRUN ? "on" : "off"); } catch (e) {}

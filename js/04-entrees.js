@@ -8,11 +8,12 @@ const ACTIONS = [
   { id: "jump", name: "Sauter", pad: true }, { id: "attack", name: "Frapper", pad: true },
   { id: "dash", name: "Dash", pad: true }, { id: "bolt", name: "Projectile", pad: true },
   { id: "grapple", name: "Grappin", pad: true }, { id: "phase", name: "Phase", pad: true },
+  { id: "action", name: "Action (prendre, ouvrir…)", pad: true },
   { id: "reset", name: "Recommencer", pad: true },
 ];
 const DEFAULT_KEYS = { left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"], up: ["ArrowUp", "KeyW"], down: ["ArrowDown", "KeyS"], jump: ["Space", "KeyC"],
-  attack: ["KeyX", "KeyJ"], dash: ["ShiftLeft", "KeyL"], bolt: ["KeyV", "KeyI"], grapple: ["KeyF", "KeyO"], phase: ["KeyE", "KeyU"], reset: ["KeyR", null] };
-const DEFAULT_PAD = { jump: 0, attack: 2, dash: 1, bolt: 3, grapple: 5, phase: 4, reset: 8 };
+  attack: ["KeyX", "KeyJ"], dash: ["ShiftLeft", "KeyL"], bolt: ["KeyV", "KeyI"], grapple: ["KeyF", "KeyO"], phase: ["KeyE", "KeyU"], action: ["KeyQ", "Enter"], reset: ["KeyR", null] };
+const DEFAULT_PAD = { jump: 0, attack: 2, dash: 1, bolt: 3, grapple: 5, phase: 4, action: 6, reset: 8 };
 const KEY_NAMES = { Space: "Espace", ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", ShiftLeft: "Maj", ShiftRight: "Maj droite",
   ControlLeft: "Ctrl", ControlRight: "Ctrl droite", AltLeft: "Alt", AltRight: "Alt Gr", Enter: "Entrée", NumpadEnter: "Entrée pavé", Tab: "Tab",
   Backspace: "Retour arrière", CapsLock: "Verr. Maj", MetaLeft: "Cmd", MetaRight: "Cmd droite" };
@@ -134,8 +135,30 @@ addEventListener("gamepadconnected", e => {
   if (e.gamepad && e.gamepad.buttons.length >= 4) { padActive = e.gamepad.index; if (typeof toast === "function") toast("Manette connectée. A pour valider, B pour revenir, Start pour la pause.", 2600); }
 });
 addEventListener("gamepaddisconnected", e => { if (e.gamepad && e.gamepad.index === padActive) { padActive = -1; if (typeof toast === "function") toast("Manette déconnectée.", 1800); } });
-const input = { x: 0, up: false, down: false, jump: false, attack: false, jumpPressed: false, attackPressed: false, dashPressed: false, boltPressed: false, grapplePressed: false, phasePressed: false, resetPressed: false, pausePressed: false, pad: false };
-const prev = { jump: false, attack: false, dash: false, bolt: false, grapple: false, phase: false, reset: false, pause: false };
+const input = { actionPressed: false, x: 0, up: false, down: false, jump: false, attack: false, jumpPressed: false, attackPressed: false, dashPressed: false, boltPressed: false, grapplePressed: false, phasePressed: false, resetPressed: false, pausePressed: false, pad: false };
+const prev = { jump: false, attack: false, dash: false, bolt: false, grapple: false, phase: false, reset: false, pause: false, action: false, up: false };
+/* La touche Action : prendre un objet, ouvrir un coffre, acheter, se reposer…
+   Chaque chose avec laquelle on peut interagir se déclare à chaque image avec actOffer(objet, « libellé », à portée ?).
+   La plus proche du héros reçoit l'invite à l'écran ; Action (ou Haut, quand on est devant) la déclenche. */
+const ACT = { cands: [], focus: null, label: "", pressed: false };
+function actOffer(obj, label, inRange) {
+  if (!inRange) return false;
+  ACT.cands.push({ obj, label });
+  if (ACT.pressed && ACT.focus === obj) { ACT.pressed = false; return true; }
+  return false;
+}
+function actStep() {
+  // la cible : la plus proche parmi celles de l'image précédente
+  const p = typeof player !== "undefined" ? player : null;
+  let best = null, bd = 1e9;
+  if (p) for (const c of ACT.cands) {
+    const o = c.obj, d = Math.abs((o.x + (o.w || 10) / 2) - (p.x + p.w / 2)) + Math.abs((o.y + (o.h || 10) / 2) - (p.y + p.h / 2)) * 0.5;
+    if (d < bd) { bd = d; best = c; }
+  }
+  ACT.focus = best ? best.obj : null; ACT.label = best ? best.label : "";
+  ACT.pressed = !!(input.actionPressed && ACT.focus);
+  ACT.cands = [];
+}
 function readInput() {
   let x = 0, up = false, down = false, jump = false, attack = false, dash = false, bolt = false, grapple = false, phase = false, reset = false, pause = false, pad = false;
   if (bound("grapple")) grapple = true;
@@ -149,11 +172,13 @@ function readInput() {
   if (bound("dash")) dash = true;
   if (bound("bolt")) bolt = true;
   if (bound("reset")) reset = true;
+  let action = bound("action");
   // Écran tactile
   if (typeof touchIn !== "undefined") {
     x += touchIn.x; if (touchIn.up) up = true; if (touchIn.down) down = true;
     if (touchIn.jump) jump = true; if (touchIn.attack) attack = true; if (touchIn.dash) dash = true;
     if (touchIn.bolt) bolt = true; if (touchIn.grapple) grapple = true; if (touchIn.phase) phase = true;
+    if (touchIn.action) action = true;
   }
   const gp = findGamepad();
   if (gp) {
@@ -170,6 +195,7 @@ function readInput() {
     if (b(padBinds.reset)) reset = true;
     if (b(padBinds.grapple)) grapple = true;
     if (b(padBinds.phase)) phase = true;
+    if (b(padBinds.action)) action = true;
     if (b(9)) pause = true;
   }
   if (grapple && !prev.grapple) input.grapplePressed = true; prev.grapple = grapple;
@@ -181,5 +207,8 @@ function readInput() {
   if (dash && !prev.dash) input.dashPressed = true; prev.dash = dash;
   if (bolt && !prev.bolt) input.boltPressed = true; prev.bolt = bolt;
   input.resetPressed = reset && !prev.reset; prev.reset = reset;
+  // Action : la touche dédiée, ou Haut quand quelque chose est à portée (sans frapper)
+  if ((action && !prev.action) || (up && !prev.up && ACT.focus && !attack)) input.actionPressed = true;
+  prev.action = action; prev.up = up;
   input.pad = pad;
 }

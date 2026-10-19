@@ -17,14 +17,15 @@
 
 const ECO = {
   shuffleStory: true,       // histoire : salles spéciales tirées au sort à chaque partie
-  altarChance: 0.65,        // chance qu'une profondeur garde un autel des ombres
+  altarChance: 0.4,        // chance qu'une profondeur garde un autel des ombres
   altarDark: 10,            // ténèbres payées pour l'objet d'un autel
   merchantChance: 0.85,     // chance qu'un colporteur passe dans une profondeur
   stealDark: 22,            // ténèbres d'un vol
-  hpPerTier: 0.12,          // +12 % de PV aux monstres par profondeur
-  speedPerTier: 0.04,
-  championRate: [0.03, 0.07, 0.11, 0.15, 0.19, 0.24],   // chance de champion selon la profondeur (5 = dimensions)
-  dmgSoftStart: 1.25, dmgSoftRange: 1.6,                 // dégâts : × 1,25 plein pot, puis rendements décroissants (max ≈ × 2,85)
+  hpPerTier: 0.25,          // +25 % de PV aux monstres par profondeur (×2 tout au fond)
+  speedPerTier: 0.06,
+  championRate: [0.04, 0.09, 0.15, 0.21, 0.28, 0.3],    // chance de champion selon la profondeur (5 = dimensions)
+  deepDamageTier: 4,        // à partir de cette profondeur, tous les monstres frappent 1 cœur plus fort
+  dmgSoftStart: 1.2, dmgSoftRange: 1.1,                  // dégâts : × 1,2 plein pot, puis rendements décroissants (max ≈ × 2,3)
   wheelPrice: 5, dicePrice: 5, gamblePrice: 15,
 };
 // Les objets les plus forts ne se vendent pas : il faut les trouver (trésor) ou les gagner (gardien)
@@ -60,11 +61,12 @@ function itemPool(src, exclude = []) {
   else pool = all.filter(it => !it.mystery);
   return pool.length ? pool : all;
 }
-function giveItemFrom(src) {
+function giveItemFrom(src, x, y) {
   const pool = itemPool(src);
   if (!pool.length) { toast("Il n'y a plus rien à gagner ici.", 2000); spawnCoins(5, player.x + 5, player.y); return null; }
-  const it = pick(pool); addItem(it.id);
-  freeze = Math.max(freeze, 0.12); itemToast(it);
+  const it = pick(pool);
+  if (typeof dropItem === "function") dropItem(it.id, x ?? player.x + player.w / 2, y ?? player.y - 4);
+  else { addItem(it.id); itemToast(it); }
   return it;
 }
 
@@ -137,7 +139,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
     if (!entering() && gameMode === "story" && level && /^dimension/.test(level.base || "")) level = storyBase || clone(DEFAULT_LEVEL);
     if (!entering()) {
       if (loading() && ecoPending) runSeed = ecoPending.runSeed || 0;
-      else if (!loading()) runSeed = Math.floor(Math.random() * 1e9);
+      else if (!loading()) runSeed = globalThis.DAILY_RUN ? ((chaosSeed * 2654435761) >>> 0) % 1e9 : Math.floor(Math.random() * 1e9);   // graine du jour : mêmes champions, colporteurs, autels pour tous
       if (level.shuffled == null && gameMode === "story") storyBase = level;
       if (storyShuffleOK() && !(loading() && ecoPending && ecoPending.noShuffle)) {
         const lv = buildStoryLevel(runSeed);
@@ -228,6 +230,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
         const keys = Object.keys(CHAMPIONS);
         makeChampion(e, keys[Math.floor(rr() * keys.length)], tier);
       }
+      if (!inDim && tier >= ECO.deepDamageTier && !e.champion && e.type !== "wisp") e.damage = (e.damage || 1) + 1;
       e.maxHp = e.hp;
     }
   }
@@ -298,7 +301,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
     spots.sort((p, q) => (q[1] - p[1]) * 4 + Math.abs(p[0] - cx) - Math.abs(q[0] - cx));
     const chosen = [];
     for (const s of spots) if (chosen.every(c => Math.abs(c[0] - s[0]) >= 3 || c[1] !== s[1])) { chosen.push(s); if (chosen.length === 3) break; }
-    const pool = ITEMS.filter(it => !it.soon && !items.has(it.id) && !it.mystery && (!it.skill || skills[it.skill] || it.skill === m.relic.skill) && !pedestals.some(p => p.item === it.id && !p.taken));
+    const pool = ITEMS.filter(it => !it.soon && !items.has(it.id) && !it.mystery && !(typeof ITEM_OFF !== "undefined" && ITEM_OFF.has(it.id)) && (!it.skill || skills[it.skill] || it.skill === m.relic.skill) && !pedestals.some(p => p.item === it.id && !p.taken));
     // un objet lié au pouvoir qu'on vient de gagner si possible
     const pickIt = list => { if (!list.length) return null; const i = Math.floor(Math.random() * list.length); return list.splice(i, 1)[0].id; };
     const own = pool.filter(it => it.skill === m.relic.skill), rest = pool.filter(it => it.skill !== m.relic.skill);
@@ -348,15 +351,13 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
       al.t += dt;
       if (al.taken) continue;
       const near = Math.abs(p.x - al.x) < 26 && Math.abs(p.y - al.y) < 26;
-      if (near && !al.near) toast(`<b>Autel des ombres</b> : un objet, contre un peu de ta lumière.<br><small>Reste dessus pour accepter.</small>`, 3200, true);
+      if (near && !al.near) toast(`<b>Autel des ombres</b> : un objet, contre un peu de ta lumière.`, 3200, true);
       al.near = near;
-      if (!(overlap(p, al))) { al.rest = 0; continue; }
-      al.rest += dt;
-      if (al.rest < 0.5) continue;
+      if (!actOffer(al, "PRENDRE (LUMIERE)", near)) continue;
       al.taken = true;
       burst(al.x + 5, al.y + 5, 30, "#b48ae0", 120);
       addDark(ECO.altarDark, true);
-      giveItemFrom("autel");
+      giveItemFrom("autel", al.x + 5, al.y);
     }
   }
   function updateWanderers(dt) {
@@ -401,10 +402,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
       const near = Math.abs(p.x + p.w / 2 - g.x - 8) < 22 && Math.abs(p.y + p.h - g.y - 16) < 20;
       if (near && !g.near) toast(gameLabel(g), 3600, true);
       g.near = near;
-      if (!(near && p.onGround) || g.cd > 0) { g.rest = 0; continue; }
-      g.rest += dt;
-      if (g.rest < 0.5) continue;
-      g.rest = 0;
+      if (g.cd > 0 || !actOffer(g, g.kind === "wheel" ? `TOURNER ${gamePrice(g)}` : g.kind === "dice" ? `JOUER ${gamePrice(g)}` : `OUVRIR ${gamePrice(g)}`, near)) continue;
       const price = gamePrice(g);
       if (g.kind === "gamble" && g.uses >= 2) { g.cd = 2; toast("« Le coffre est vide, l'ami. Reviens à la prochaine partie. »", 2000); continue; }
       if (coins < price) { g.cd = 1.2; toast(`Il te manque ${price - coins} pièce${price - coins > 1 ? "s" : ""}.`, 1600); continue; }
@@ -431,7 +429,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
         [14, () => { g.result = "COEUR"; spawnLoot("heart", x, y); }],
         [12, () => { g.result = "CLE"; spawnLoot("key", x, y); }],
         [11, () => { g.result = "MAUDIT"; addDark(8, true); popText(x, y - 6, "MAUDIT", "#9d6bc4"); toast("La roue s'arrête sur un crâne. Les ténèbres ricanent.", 2200); }],
-        [6,  () => { g.result = "OBJET"; giveItemFrom("maudit"); S("item"); }],
+        [6,  () => { g.result = "OBJET"; giveItemFrom("maudit", x, y); S("item"); }],
       ]);
     } else if (g.kind === "dice") {
       const a1 = 1 + Math.floor(Math.random() * 6), a2 = 1 + Math.floor(Math.random() * 6), b1 = 1 + Math.floor(Math.random() * 6), b2 = 1 + Math.floor(Math.random() * 6);
@@ -440,7 +438,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
       else if (a1 + a2 > b1 + b2) { spawnCoins(9, x, y); popText(x, y - 8, `${a1 + a2} CONTRE ${b1 + b2}`, "#f2d45a"); }
       else popText(x, y - 8, `${a1 + a2} CONTRE ${b1 + b2}`, "#c4413b");
     } else {
-      giveItemFrom("maudit");
+      giveItemFrom("maudit", x, y);
     }
   }
   // ----- La prison -----
@@ -451,7 +449,7 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
       if (pr.state !== "caged") { pr.fade += dt; continue; }
       const near = Math.abs(p.x - pr.x) < 50 && Math.abs(p.y - pr.y) < 24;
       if (near && !pr.hinted) { pr.hinted = true; toast("« Libère-moi… une clé, par pitié. Je saurai te remercier. »", 2800); }
-      if (!overlap(p, { x: pr.x - 2, y: pr.y, w: pr.w + 4, h: pr.h })) continue;
+      if (!actOffer(pr, "LIBERER", overlap(p, { x: pr.x - 4, y: pr.y, w: pr.w + 8, h: pr.h }))) continue;
       freePrisoner(pr);
     }
   }

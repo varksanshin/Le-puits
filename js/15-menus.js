@@ -94,6 +94,7 @@ function renderControls() {
     ["Grappin", keysFor("grapple"), padLabel(padBinds.grapple)],
     ["Phase", keysFor("phase"), padLabel(padBinds.phase)],
     ["Traverser une planche", `${keysFor("down")} + Sauter`, `Bas + ${padLabel(padBinds.jump)}`],
+    ["Action (prendre, ouvrir, acheter, se reposer)", `${keysFor("action")}, ou Haut devant l'objet`, `${padLabel(padBinds.action)}, ou Haut`],
     ["Recommencer la run", keysFor("reset"), padLabel(padBinds.reset)],
     ["Pause", "Échap", "Start"],
   ];
@@ -111,7 +112,7 @@ function openPause() {
 function closeMenu() {
   menuEl.hidden = true; screen = "play"; $("hud").hidden = false; keys.clear();
   // un bouton encore enfoncé ne doit pas déclencher d'action en jeu
-  Object.assign(prev, { jump: true, attack: true, dash: true, bolt: true, grapple: true, phase: true, pause: true });
+  Object.assign(prev, { action: true, up: true, jump: true, attack: true, dash: true, bolt: true, grapple: true, phase: true, pause: true });
   Object.assign(input, { jumpPressed: false, attackPressed: false, dashPressed: false, boltPressed: false, grapplePressed: false, phasePressed: false });
   cv.focus({ preventScroll: true });
 }

@@ -388,3 +388,4 @@ body.pvp-on .toast{margin-bottom:9%}
 .pvp-quit .mi{font-size:14px;opacity:.7}
 @media (max-width:620px){.pvp-cards{grid-template-columns:1fr}.pvp-cards .mi.pvp-card{flex-direction:row;text-align:left;min-height:0;flex-wrap:wrap}.pvp-card .pvp-ic{width:32px;height:40px}}
 body.pvp-drafting #touchpad{display:none}
+.tp-btns{grid-template-columns:repeat(5,auto)}.tp-btns button.tp-act{border-color:#f2d45a;color:#f2d45a}

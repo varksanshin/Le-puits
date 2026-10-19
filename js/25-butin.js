@@ -53,7 +53,7 @@ function dropFromEnemy(e) {
   if (e.boss) { spawnCoins(12 * mult, x, y); spawnLoot("heart", x, y); spawnLoot("heart", x, y); spawnLoot("key", x, y); return; }
   if (e.decoy || e.summonedBy) return;
   if (e.mini) { spawnCoins(8 * mult, x, y); spawnLoot("heart", x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); return; }
-  if (e.type === "mimic") { spawnCoins(5 * mult, x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); if (Math.random() < 0.12 * L) giveRandomItem(); return; }
+  if (e.type === "mimic") { spawnCoins(5 * mult, x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); if (Math.random() < 0.06 * L) giveRandomItem(x, y); return; }
   if (e.champion && typeof championLoot === "function") championLoot(e, x, y, mult);
   const big = e.type === "golem";
   let n = 0;
@@ -67,8 +67,8 @@ function dropFromEnemy(e) {
 }
 function chestLoot(ch, secret) {
   const x = ch.x + 7, y = ch.y, L = luck();
-  if (secret) { giveRandomItem(); spawnCoins(3, x, y); return; }
-  if (Math.random() < 0.08 * L) { giveRandomItem(); return; }
+  if (secret) { giveRandomItem(x, y); spawnCoins(3, x, y); return; }
+  if (Math.random() < 0.04 * L) { giveRandomItem(x, y); return; }
   spawnCoins(2 + Math.floor(Math.random() * 3), x, y);
   if (Math.random() < 0.45) spawnLoot("heart", x, y);
   if (Math.random() < 0.35 * L) spawnLoot("key", x, y);
@@ -190,15 +190,13 @@ function updatePedestals(dt) {
     const dx = Math.abs((p.x + p.w / 2) - (pd.x + 6)), dy = Math.abs((p.y + p.h) - (pd.y + 12));
     if ((!pd.item && !pd.good && dx < 120 && dy < 60) || (pd.item && items.has(pd.item))) rollPedestal(pd);
     const near = dx < 26 && dy < 22;
-    if (near && !pd.near) toast(pedestalLabel(pd) + (pd.chained ? "<br><small>Enchaîné : une clé pour le prendre aussi.</small>" : pd.kind === "guardian" ? "<br><small>Butin du gardien : un seul au choix.</small>" : priceOf(pd) ? "<br><small>Reste sur le piédestal pour acheter.</small>" : ""), 3800, true);
+    if (near && !pd.near) toast(pedestalLabel(pd) + (pd.chained ? "<br><small>Enchaîné : une clé pour le prendre aussi.</small>" : pd.kind === "guardian" ? "<br><small>Butin du gardien : un seul au choix.</small>" : ""), 3800, true);
     pd.near = near;
-    if (!(overlap(p, pd) && p.onGround)) { pd.rest = 0; continue; }
-    pd.rest += dt;
-    if (pd.rest < 0.45) continue;
     const price = priceOf(pd);
-    if (coins < price) { if (pd.rest < 0.45 + dt * 1.5) toast(`Il te manque ${price - coins} pièce${price - coins > 1 ? "s" : ""}.`, 1800); continue; }
+    if (!actOffer(pd, pd.chained ? "BRISER LA CHAINE" : price ? `ACHETER ${price}` : "PRENDRE", near || overlap(p, pd))) continue;
+    if (coins < price) { toast(`Il te manque ${price - coins} pièce${price - coins > 1 ? "s" : ""}.`, 1800); continue; }
     if (pd.chained) {                                   // le reliquaire : une clé pour un second objet du gardien
-      if (keyCount <= 0) { if (pd.rest < 0.45 + dt * 1.5) toast("Des chaînes retiennent cet objet. Il te faut une clé.", 1800); continue; }
+      if (keyCount <= 0) { toast("Des chaînes retiennent cet objet. Il te faut une clé.", 1800); continue; }
       addKeys(-1); typeof SFX !== "undefined" && SFX.play("keyDoor");
     }
     addCoins(-price); pd.taken = true;
@@ -215,16 +213,14 @@ function updateSacrifice(dt) {
   const p = player;
   for (const al of sacrAltars) {
     al.cd = Math.max(0, al.cd - dt);
-    if (!(overlap(p, al) && p.onGround) || al.cd > 0) { al.rest = 0; continue; }
-    al.rest += dt;
-    if (al.rest < 0.7) continue;
-    al.rest = 0; al.cd = 1.4;
+    if (al.cd > 0 || !actOffer(al, "SACRIFIER 1 PV", overlap(p, al))) continue;
+    al.cd = 0.8;
     if (p.hp <= 1) { toast("L'autel refuse : il ne prend pas ta dernière goutte de sang.", 2200); continue; }
     p.hp -= 1; renderHearts(); al.uses++;
     burst(al.x + 8, al.y + 2, 20, "#c4413b", 90); shake(2, 0.15);
     addDark(4, true);
     const r = Math.random(), bonus = Math.min(0.3, al.uses * 0.06);
-    if (r < 0.28 + bonus) { giveRandomItem(); }
+    if (r < 0.16 + bonus) { giveRandomItem(al.x + 8, al.y); }
     else if (r < 0.58 + bonus) { spawnCoins(4 + al.uses, al.x + 8, al.y); toast("L'autel crache des pièces.", 1800); }
     else if (r < 0.72 + bonus) { spawnLoot("key", al.x + 8, al.y); toast("Une clé tombe de l'autel.", 1800); }
     else toast("Le sang s'écoule… l'autel reste muet.", 1800);
@@ -234,13 +230,12 @@ function updateGoldChests(dt) {
   const p = player;
   for (const ch of goldChests) {
     if (ch.open) continue;
-    if (!(overlap(p, ch) && p.onGround) && !(p.atkTimer > 0 && overlap(attackBox(p.x, p.y), ch))) { ch.rest = 0; continue; }
-    ch.rest += dt;
-    if (ch.rest < 0.35 && !(p.atkTimer > 0)) continue;
+    const hit = p.atkTimer > 0 && overlap(attackBox(p.x, p.y), ch);
+    if (!actOffer(ch, "OUVRIR (1 CLE)", overlap(p, ch)) && !hit) { if (!overlap(p, ch)) ch.hinted = false; continue; }
     if (keyCount <= 0) { if (!ch.hinted) { ch.hinted = true; toast("Un coffre doré, fermé à clé.", 1800); } continue; }
     addKeys(-1); ch.open = true;
     burst(ch.x + 7, ch.y + 4, 30, "#f2d45a", 120);
-    if (Math.random() < 0.3 * luck()) { giveRandomItem(); spawnCoins(3, ch.x + 7, ch.y); }
+    if (Math.random() < 0.15 * luck()) { giveRandomItem(ch.x + 7, ch.y); spawnCoins(3, ch.x + 7, ch.y); }
     else { spawnCoins(6 + Math.floor(Math.random() * 4), ch.x + 7, ch.y); spawnLoot("heart", ch.x + 7, ch.y); spawnLoot("key", ch.x + 7, ch.y); toast("Le coffre doré déborde de butin !", 2000); }
   }
 }

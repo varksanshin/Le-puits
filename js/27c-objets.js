@@ -304,7 +304,10 @@ Object.assign(ITEM_ICONS, {
     run.rage = Math.max(0, run.rage - dt); run.vampT = Math.max(0, run.vampT - dt);
     if (run.rage > 0 && Math.random() < dt * 20) particles.push({ x: p.x + Math.random() * p.w, y: p.y + p.h * Math.random(), vx: 0, vy: -25, life: 0.3, max: 0.3, color: "#e04a4a", g: -10 });
     if (p.zone !== run.zone) {
-      if (run.zone !== null) {
+      // seulement à la PREMIÈRE visite d'une profondeur (avant : chaque passage de frontière donnait une clé)
+      run.seen = run.seen || new Set();
+      const fresh = !run.seen.has(p.zone); run.seen.add(p.zone);
+      if (run.zone !== null && fresh) {
         if (has("bouclier") && !run.shield) { run.shield = true; popText(p.x + 5, p.y - 4, "Bouclier", "#e8f0ff"); }
         if (synOn("explorateur")) { addKeys(1); popText(p.x + 5, p.y - 10, "+1 clé", "#f2d45a"); }
       }

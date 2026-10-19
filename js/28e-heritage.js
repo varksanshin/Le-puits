@@ -17,7 +17,7 @@ const META_KEY = "lepuits.heritage";
 let meta = { embers: 0, total: 0, lv: {}, off: false, runs: 0 };
 try { const m = JSON.parse(localStorage.getItem(META_KEY)); if (m) meta = { ...meta, ...m, lv: { ...(m.lv || {}) } }; } catch (e) {}
 const saveMeta = () => { try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) {} };
-const metaLv = id => (meta.off || globalThis.SPEEDRUN) ? 0 : (meta.lv[id] || 0);   // coupé aussi en mode speedrun
+const metaLv = id => (meta.off || globalThis.SPEEDRUN || globalThis.DAILY_RUN) ? 0 : (meta.lv[id] || 0);   // coupé aussi en speedrun et sur la graine du jour (tout le monde à égalité)
 
 // Braises gagnées par une run
 function embersFor(kind) {

@@ -67,7 +67,7 @@ function updateWorld(dt) {
     if (!pk.taken && overlap(p, pk)) {
       pk.taken = true;
       burst(pk.x + 5, pk.y + 5, 30, "#b48ae0", 120);
-      giveRandomItem();
+      giveRandomItem(pk.x + 5, pk.y);
     }
   }
   pickups = pickups.filter(pk => !pk.taken);

@@ -69,23 +69,21 @@ function updateDark(dt) {
   for (const f of campfires) {
     f.t += dt;
     if (f.used) continue;
-    if (overlap(p, f) && still) {
-      f.rest += dt;
-      if (f.rest >= DARK.restTime) {
+    if (actOffer(f, "SE REPOSER", overlap(p, f))) {
+      {
         f.used = true; f.usedAt = runClock;
         addDark(DARK.campfire, true);
         if (p.hp < stats.maxHp) { p.hp += 1; renderHearts(); }
         burst(f.x + 8, f.y + 8, 24, "#f2b54a", 80);
         campfireSave();
       }
-    } else f.rest = Math.max(0, f.rest - dt * 2);
+    }
   }
   for (const s of steles) {
     s.t += dt;
     if (s.used) continue;
-    if (overlap(p, s) && still) {
-      s.rest += dt;
-      if (s.rest >= DARK.restTime) {
+    if (actOffer(s, "TOUCHER", overlap(p, s))) {
+      {
         s.used = true;
         addDark(DARK.stele, true);
         if (p.hp < stats.maxHp) { p.hp += 1; renderHearts(); }
@@ -93,7 +91,7 @@ function updateDark(dt) {
         shake(2, 0.2);
         toast("La stèle se vide dans tes veines. Tu te sens plus fort… et plus sombre.", 3000);
       }
-    } else s.rest = Math.max(0, s.rest - dt * 2);
+    }
   }
   // Au-delà de 80 %, le puits murmure
   if (dark >= 80) {

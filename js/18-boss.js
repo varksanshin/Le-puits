@@ -13,11 +13,11 @@ const bossBarEl = document.getElementById("bossBar"), bossNameEl = document.getE
 function updateBossDoor(dt) {
   const p = player, d = bossDoor;
   if (!d || bossFight || p.dead) return;
-  if (overlap(p, d) && p.onGround) {
-    if (d.hold === 0) toast(doorText(), 3200);
-    d.hold += dt;
-    if (d.hold >= 1) enterArena();
-  } else d.hold = Math.max(0, d.hold - dt * 2);
+  if (overlap(p, d)) {
+    if (!d.near) toast(doorText(), 3200);
+    d.near = true;
+    if (actOffer(d, "ENTRER", true)) { d.hold = 1; enterArena(); }
+  } else { d.near = false; d.hold = 0; }
 }
 function doorText() {
   const t = darkTier();

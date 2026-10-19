@@ -48,14 +48,14 @@ let trueRun = false;
     const r = o(dt, ...a), d = bossDoor, p = player;
     if (!d || bossFight || !p || p.dead || trueRun || !trueEndingUnlocked()) return r;
     const al = altarOf(d); if (!al) return r;
-    if (overlap(p, { x: al.x - 4, y: al.y - 8, w: al.w + 8, h: al.h + 8 }) && p.onGround && Math.abs(p.vx) < 12) {
+    if (overlap(p, { x: al.x - 4, y: al.y - 8, w: al.w + 8, h: al.h + 8 })) {
       if (!al.hinted) {
         al.hinted = true;
         const m = missing();
-        toast(m > 0 ? `Un autel aux empreintes de reliques. Il en manque ${m}…` : "Toutes les empreintes s'illuminent. Reste immobile…", 2800);
+        toast(m > 0 ? `Un autel aux empreintes de reliques. Il en manque ${m}…` : "Toutes les empreintes s'illuminent. Pose tes reliques…", 2800);
       }
       if (missing() === 0) {
-        al.hold += dt;
+        if (actOffer(al, "POSER LES RELIQUES", true)) al.hold = 1.2;
         if (al.hold >= 1.2) {
           trueRun = true;
           burst(al.x + 8, al.y, 60, "#f2d45a", 160, true); shake(3, 0.4); freeze = Math.max(freeze, 0.25);
