@@ -9,7 +9,7 @@
 const ONLINE = {
   url: "https://zpdrjahecvrghfyiquja.supabase.co",
   key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpwZHJqYWhlY3ZyZ2hmeWlxdWphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxOTcwNzMsImV4cCI6MjEwNzc3MzA3M30.ezziE4gmrc1-i54ydHdb1zGmH_8KWMrdlBUBNvfA5Rk",
-  version: "0.22",
+  version: "0.23",
   on: true, sent: 0, failed: 0, last: null,
 };
 try { ONLINE.on = localStorage.getItem("lepuits.online") !== "off"; } catch (e) {}
