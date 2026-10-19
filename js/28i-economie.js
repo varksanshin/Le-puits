@@ -133,6 +133,8 @@ const storyShuffleOK = () => ECO.shuffleStory && typeof PLAN_HISTOIRE !== "undef
   // ===== Nouvelle partie : graine, carte tirée au sort, état remis à zéro =====
   around("resetRun", (o, ...a) => {
     if (typeof DIM !== "undefined" && DIM && !entering()) leaveDimension();
+    // filet de sécurité : jamais une map de dimension comme map de l'histoire
+    if (!entering() && gameMode === "story" && level && /^dimension/.test(level.base || "")) level = storyBase || clone(DEFAULT_LEVEL);
     if (!entering()) {
       if (loading() && ecoPending) runSeed = ecoPending.runSeed || 0;
       else if (!loading()) runSeed = Math.floor(Math.random() * 1e9);

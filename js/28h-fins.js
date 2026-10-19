@@ -518,7 +518,9 @@ function drawOutro(dt) {
     if (!dimEntering) realSeen = new Set();
     return r;
   });
-  around("startChaos", (o, ...a) => { if (DIM) { dimPrev = null; DIM = null; } return o(...a); });
+  // quitter une dimension pour le chaos (ou une graine du jour, ou une sauvegarde) : on remet d'abord la map du puits,
+  // sinon le jeu la prendrait pour « la map de l'histoire » et on y réapparaîtrait plus tard
+  for (const fn of ["startChaos", "startChaosSeed", "loadGame"]) around(fn, (o, ...a) => { if (DIM) leaveDimension(); return o(...a); });
   around("backToStory", (o, ...a) => { if (DIM) leaveDimension(); return o(...a); });
   // pas de sauvegarde dans une dimension (elle n'existe que le temps du voyage)
   around("saveGame", (o, quiet, ...a) => { if (DIM) { if (!quiet) toast("Impossible de sauvegarder hors du monde.", 2200); return false; } return o(quiet, ...a); });
