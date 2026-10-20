@@ -1088,6 +1088,7 @@ function siegeDraw() {
   for (const p of S_.players) list.push({ y: p.y + 5, p });
   list.sort((a, b) => a.y - b.y);
   for (const o of list) o.e ? sgDrawEnemy(o.e, ox, oy) : o.p ? sgDrawPlayer(o.p, ox, oy) : sgDrawProp(o.d, ox, oy);
+  sgDrawHidden(list, ox, oy);
   // tirs
   for (const q of S_.shots) sgDrawShot(q, ox, oy);
   for (const q of S_.foeShots) { const x = sgPx(q.x - ox), y = sgPx(q.y - oy);
@@ -1098,6 +1099,7 @@ function siegeDraw() {
   for (const n of S_.nums) { ctx.globalAlpha = Math.min(1, n.t * 3); drawTinyText(n.x - ox, n.y - oy, String(n.v), n.c); }
   ctx.globalAlpha = 1;
   sgDrawLight(ox, oy);
+  sgDrawPointers(ox, oy);
   sgDrawHud();
 }
 // la nuit et les lumières : une couche sombre percée par les feux
@@ -1178,6 +1180,54 @@ function sgDrawFx(f, ox, oy) {
   }
   else if (f.kind === "nova") { const k = 1 - f.t / 0.35; ctx.globalAlpha = 0.4 * (1 - k); ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(x, y, f.r * k, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, f.r * k, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
   else if (f.kind === "boom") { const k = 1 - f.t / 0.4; ctx.globalAlpha = Math.max(0, 0.6 * (1 - k)); ctx.fillStyle = f.c || "#f2b54a"; ctx.beginPath(); ctx.arc(x, y, f.r * (0.4 + k * 0.6), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.fillStyle = "#fff3b8"; ctx.beginPath(); ctx.arc(x, y, f.r * 0.4 * (1 - k), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+}
+// Ce qui est caché derrière une maison, un arbre, un rocher ou la palissade : une silhouette blanche par-dessus le décor
+const sgPropBox = o => o.kind === "tree" ? [o.x - 10, o.y - 30, o.x + 10, o.y] : o.kind === "rock" ? [o.x - 6, o.y - 11, o.x + 6, o.y]
+  : o.kind === "post" ? [o.x - 8, o.y - 20, o.x + 8, o.y] : [o.x - 3, o.y - o.hs.h * T - 3, o.x + o.hs.w * T + 3, o.y];
+function sgEnemyLook(e) {
+  const d = SG_ENEMIES[e.type], step = Math.floor(e.t * 6) % 2;
+  const name = d.sprite === "golem" ? "golem0" : ["wisp", "bat", "rodeur", "squelette", "crawler"].includes(d.sprite) ? d.sprite + step : d.sprite + "0";
+  return { name, sc: d.scale || 1, w: spriteW(name), h: spriteH(name), hop: d.fly ? Math.sin(e.t * 6) * 1.5 : 0 };
+}
+function sgDrawHidden(list, ox, oy) {
+  const props = list.filter(o => o.d);
+  if (!props.length) return;
+  for (let i = 0; i < list.length; i++) {
+    const o = list[i]; if (!o.e && !o.p) continue;
+    let box;
+    if (o.e) { const L = sgEnemyLook(o.e), by = o.e.y + o.e.r * 0.6 - L.hop; box = [o.e.x - L.w * L.sc / 2, by - L.h * L.sc, o.e.x + L.w * L.sc / 2, by]; o.look = L; }
+    else { if (o.p.down) continue; box = [o.p.x - 6, o.p.y - 13, o.p.x + 6, o.p.y + 1]; }
+    // un élément du décor dessiné APRÈS (donc devant) et qui le recouvre
+    let hidden = false;
+    for (let j = i + 1; j < list.length && !hidden; j++) {
+      const q = list[j]; if (!q.d) continue;
+      const b = sgPropBox(q.d);
+      if (b[0] < box[2] - 1 && b[2] > box[0] + 1 && b[1] < box[3] - 2 && b[3] > box[1] + 2) hidden = true;
+    }
+    if (!hidden) continue;
+    ctx.globalAlpha = 0.45;
+    if (o.e) { const L = o.look, x = sgPx(o.e.x - ox), y = sgPx(o.e.y - oy); ctx.save(); ctx.translate(x, y + o.e.r * 0.6 - L.hop); ctx.scale(L.sc, L.sc); drawSprite(L.name, -L.w / 2, -L.h, siege.map.heart.x < o.e.x, true); ctx.restore(); }
+    else { ctx.globalAlpha = 0.55; drawSprite("hero_idle0", sgPx(o.p.x - ox) - 6, sgPx(o.p.y - oy) - 13, o.p.face < 0, true); }
+    ctx.globalAlpha = 1;
+  }
+}
+// Une petite flèche autour de chaque héros local : vers le monstre le plus proche, quand aucun n'est à l'écran
+function sgDrawPointers(ox, oy) {
+  const S_ = siege; if (!S_.enemies.length) return;
+  for (const p of S_.local) {
+    if (p.down) continue;
+    let best = null, bd = 1e9;
+    for (const e of S_.enemies) { const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; best = e; } }
+    if (!best) continue;
+    const sx = best.x - ox, sy = best.y - oy;
+    if (sx > 6 && sx < VW - 6 && sy > 10 && sy < VH - 6) continue;              // déjà visible : pas besoin de flèche
+    const a = Math.atan2(best.y - p.y, best.x - p.x), R = 15, x = p.x - ox + Math.cos(a) * R, y = p.y - 5 - oy + Math.sin(a) * R;
+    const al = 0.35 + 0.2 * Math.sin(time * 4) + Math.min(0.2, 40 / bd);     // discrète, un peu plus vive quand il approche
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.globalAlpha = al;
+    ctx.fillStyle = SG_ENEMIES[best.type].boss ? "#e0453c" : "#f6efe0";
+    ctx.beginPath(); ctx.moveTo(3, 0); ctx.lineTo(-2, -2.5); ctx.lineTo(-1, 0); ctx.lineTo(-2, 2.5); ctx.closePath(); ctx.fill();
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
 }
 function sgDrawEnemy(e, ox, oy) {
   const d = SG_ENEMIES[e.type], sc = d.scale || 1, x = sgPx(e.x - ox), y = sgPx(e.y - oy);
