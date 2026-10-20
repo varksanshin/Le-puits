@@ -392,3 +392,15 @@ body.pvp-drafting #touchpad{display:none}
 /* Siège */
 body.siege-on #hud{display:none}
 .sg-up{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:rgba(127,214,192,.15);color:#7fd6c0;font-family:var(--font-display);font-size:24px;margin-bottom:4px}
+/* Siège : raretés des objets, sorts (éveil, forme finale) */
+.pvp-card canvas[data-spell].pvp-ic{width:48px;height:48px;image-rendering:pixelated}
+.pvp-cards .mi.pvp-card[class*="sg-r-"]{border-width:2px}
+.pvp-cards .mi.pvp-card.sg-r-commun{--rar:#b8b0a0}
+.pvp-cards .mi.pvp-card.sg-r-rare{--rar:#5aa0e0;background:linear-gradient(180deg,rgba(40,70,110,.55),rgba(20,14,24,.88))}
+.pvp-cards .mi.pvp-card.sg-r-epique{--rar:#b77ae0;background:linear-gradient(180deg,rgba(80,40,110,.6),rgba(20,14,24,.88))}
+.pvp-cards .mi.pvp-card.sg-r-legendaire{--rar:#f2b54a;background:linear-gradient(180deg,rgba(120,80,20,.65),rgba(20,14,24,.88));box-shadow:0 0 18px rgba(242,181,74,.35)}
+.pvp-cards .mi.pvp-card.sg-r-spell{--rar:#7fd6c0}
+.pvp-cards .mi.pvp-card[class*="sg-r-"]{border-color:var(--rar)}
+.pvp-cards .mi.pvp-card[class*="sg-r-"] .pvp-card-f{color:var(--rar);font-weight:700}
+.pvp-cards .mi.pvp-card[class*="sg-r-"]:focus,.pvp-cards .mi.pvp-card[class*="sg-r-"]:hover{border-color:#fff3b8}
+.sg-lv{display:inline-block!important;font-family:var(--font-mono);font-size:11px!important;color:var(--rar,#7fd6c0)!important;border:1px solid currentColor;border-radius:4px;padding:0 4px;vertical-align:middle}

@@ -14,8 +14,10 @@
 const SG = {
   W: 70, H: 46, ringR: 10, gateW: 1,                 // carte en tuiles, rayon de la palissade, demi-largeur des portes
   heartHp: 100, breakTime: 9, firstWave: 3,          // PV du Cœur, durée du répit, attente avant la 1re vague
-  playerHp: 6, speed: 82, iframes: 1.0, revive: 2.5,
+  playerHp: 6, speed: 92, accel: 1100, iframes: 1.0, revive: 2.5, slots: 6,   // vitesse, accélération (px/s²), emplacements de sorts
   xpBase: 6, xpGrow: 5,                              // expérience du niveau n : xpBase + xpGrow × n
+  finalWave: 25,                                     // la vague du boss final (le Seigneur de la Horde)
+  coopCount: 0.6, coopHp: 0.3, lvCount: 0.03,        // par joueur en plus : +60 % de monstres, +30 % de PV ; +3 % de monstres par niveau d'équipe
   sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
 const SG_ENEMIES = {
@@ -26,8 +28,54 @@ const SG_ENEMIES = {
   wisp:      { hp: 8, spd: 46, r: 5, dmg: 2, heart: 4, xp: 1, sprite: "wisp", fly: true, explode: true, from: 6 },
   rodeur:    { hp: 36, spd: 34, r: 7, dmg: 1, heart: 3, xp: 3, sprite: "rodeur", lunge: true, from: 7 },
   belier:    { hp: 520, spd: 15, r: 14, dmg: 2, heart: 25, xp: 40, sprite: "golem", boss: true, scale: 1.8, from: 99 },
+  // le boss final (vague SG.finalWave, puis toutes les 10 vagues en mode infini)
+  seigneur:  { hp: 5200, spd: 16, r: 20, dmg: 3, heart: 40, xp: 250, sprite: "seigneur", boss: true, lord: true, scale: 2.8, from: 999 },
 };
-// Améliorations de niveau (sans objet) et objets entre les vagues (les objets du puits, adaptés)
+// le Seigneur : la silhouette du golem, en pierre sombre veinée de rouge, aux yeux de braise
+try { if (SPRITES.golem0 && !SPRITES.seigneur0) { SPRITES.seigneur0 = SPRITES.golem0; SPRITE_PAL.seigneur = { ...(SPRITE_PAL.golem || {}), M: "#3a1a26", g: "#8a1a2a", e: "#ff5a3a", o: "#120a10", "#": "#5a2a3a", X: "#7a3a4a" }; } } catch (e) {}
+// ===== Les sorts : niveaux 1 à 10, un emplacement chacun (SG.slots au départ) =====
+/* Au niveau 5, le sort s'ÉVEILLE (un nouvel effet) ; au niveau 10, il prend sa FORME FINALE (il change de nom et de visuel).
+   On ne peut pas dépasser le niveau 10, et chaque nouveau sort prend un emplacement : il faut choisir. */
+const SG_SPELLS = {
+  epee:      { name: "Épée",            col: "#e9e1cf", desc: "Un arc tranchant devant toi.",
+               awake: "Revers : frappe aussi derrière toi.",               final: "Lame céleste",   finalDesc: "Chaque coup projette deux vagues tranchantes qui traversent tout." },
+  tir:       { name: "Tir magique",     col: "#7fc8d6", desc: "Des projectiles vers ta visée.",
+               awake: "Les tirs traversent 2 ennemis de plus.",            final: "Rayon",          finalDesc: "Un laser qui transperce tout sur sa ligne." },
+  eclair:    { name: "Éclair",          col: "#f2d45a", desc: "La foudre frappe et rebondit d'ennemi en ennemi.",
+               awake: "Deux éclairs à la fois, qui étourdissent.",         final: "Tempête",        finalDesc: "La foudre tombe sans arrêt autour de toi." },
+  feu:       { name: "Feu",             col: "#e8913a", desc: "Une zone de feu brûle ce qui t'approche.",
+               awake: "Un monstre qui meurt en brûlant explose.",          final: "Brasier",        finalDesc: "Une fournaise immense qui sème des flaques de feu." },
+  boomerang: { name: "Boomerang",       col: "#e6dcc8", desc: "Des os qui partent et reviennent.",
+               awake: "Tu en lances aussi derrière toi.",                  final: "Tourbillon",     finalDesc: "Quatre boomerangs géants dans toutes les directions." },
+  lames:     { name: "Lames tournantes", col: "#bed7ff", desc: "Des lames fantômes tournent autour de toi.",
+               awake: "Lames plus grandes et plus rapides.",               final: "Danse des lames", finalDesc: "Un second cercle de lames tourne en sens inverse." },
+  etoiles:   { name: "Pluie d'étoiles", col: "#ffe08a", desc: "Des étoiles tombent sur les ennemis proches.",
+               awake: "Chaque étoile explose.",                            final: "Météores",       finalDesc: "De gros météores écrasent les groupes d'ennemis." },
+  glace:     { name: "Glace",           col: "#9fe0ff", desc: "Une onde de givre qui blesse et ralentit.",
+               awake: "L'onde gèle sur place.",                            final: "Blizzard",       finalDesc: "Une tempête de neige permanente qui ralentit et blesse." },
+  poison:    { name: "Poison",          col: "#9cbf6a", desc: "Des fioles qui laissent une flaque toxique.",
+               awake: "Deux fioles à la fois.",                            final: "Marais",         finalDesc: "Des flaques géantes qui durent et ralentissent." },
+};
+const SG_SPELL_ICONS = {           // 8×8 : a = couleur, b = clair, c = sombre
+  epee:      ["......bb", ".....bab", "....bab.", "c..bab..", ".cbab...", "..cc....", ".c.c....", "c......."],
+  tir:       ["...b....", "..bab...", ".baaab..", "baabaab.", ".baaab..", "..bab...", "...b....", "........"],
+  eclair:    ["....aab.", "...aab..", "..aab...", ".aaaaab.", "...aab..", "..aab...", ".ab.....", "a......."],
+  feu:       ["...b....", "..ba....", "..aab...", ".aabaa..", ".abbba..", "aabbbaa.", ".acccac.", "..cccc.."],
+  boomerang: ["bb......", "baa.....", ".baa....", "..baa...", "..bab...", ".baa....", "baa.....", "bb......"],
+  lames:     ["..b.....", ".bab..b.", "..b..bab", "..c...b.", ".b..c...", "bab..b..", ".b..bab.", ".....b.."],
+  etoiles:   ["...b....", "...a....", "baaaaab.", ".aabaa..", "..aaa...", ".aa.aa..", ".a...a..", "........"],
+  glace:     ["...b....", ".b.a.b..", "..aaa...", "baabaab.", "..aaa...", ".b.a.b..", "...b....", "........"],
+  poison:    ["..cc....", "..bb....", "..ab....", ".aaaa...", "aabaaa..", "aaaaba..", "aaaaaa..", ".cccc..."],
+};
+const sgShade = (hex, k) => { const n = parseInt(hex.slice(1), 16), f = v => Math.max(0, Math.min(255, Math.round(v * k))); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; };
+function sgDrawSpellIcon(c, id, x, y, sc = 1) {
+  const pat = SG_SPELL_ICONS[id], col = SG_SPELLS[id].col; if (!pat) return;
+  const P = { a: col, b: "#ffffff", c: sgShade(col, 0.5) };
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 8; k++) { const ch = pat[r][k]; if (ch !== ".") { c.fillStyle = P[ch]; c.fillRect(x + k * sc, y + r * sc, sc, sc); } }
+}
+const sgSpellIconCanvas = (() => { const cache = {}; return id => { if (cache[id]) return cache[id]; const cv2 = document.createElement("canvas"); cv2.width = 8; cv2.height = 8; try { sgDrawSpellIcon(cv2.getContext("2d"), id, 0, 0, 1); } catch (e) {} return (cache[id] = cv2); }; })();
+
+// Améliorations de niveau (passives)
 const SG_UPGRADES = [
   { id: "force",   name: "Force",            desc: "+15 % de dégâts.",                      max: 6, apply: s => { s.dmg *= 1.15; } },
   { id: "cadence", name: "Cadence",          desc: "Tu attaques 12 % plus vite.",           max: 6, apply: s => { s.rate *= 1.12; } },
@@ -35,31 +83,37 @@ const SG_UPGRADES = [
   { id: "ampleur", name: "Ampleur",          desc: "Coups et zones 15 % plus grands.",      max: 5, apply: s => { s.area *= 1.15; } },
   { id: "aimant",  name: "Aimant",           desc: "Tu attires l'expérience de plus loin.", max: 3, apply: s => { s.magnet *= 1.5; } },
   { id: "vigueur", name: "Vigueur",          desc: "+1 PV max, et tu te soignes de 1.",     max: 5, apply: (s, p) => { s.maxHp += 1; p.hp = Math.min(p.hp + 1, s.maxHp); } },
-  { id: "tir",     name: "Tir magique",      desc: "Ton tir magique : plus fort, plus rapide, plus de projectiles.", max: 5, apply: s => { s.bolt += 1; } },
   { id: "remparts",name: "Remparts",         desc: "Le Cœur du village : +20 PV max, réparé de 20.", max: 99, team: true, apply: () => { siege.heart.max += 20; siege.heart.hp = Math.min(siege.heart.max, siege.heart.hp + 20); } },
   { id: "reparer", name: "Réparer le village", desc: "Le Cœur regagne 35 PV.",             max: 99, team: true, apply: () => { siege.heart.hp = Math.min(siege.heart.max, siege.heart.hp + 35); } },
 ];
+// Les objets du puits (entre les vagues) : passifs, avec une RARETÉ ; les « parchemins » font monter un sort de 2 niveaux
 const SG_ITEMS = {
-  spectrale: s => { s.orbit += 1; },              lamebraise: s => { s.burn = true; },        venin: s => { s.poison = true; },
-  foudre: s => { s.lightning += 1; },             boomerang: s => { s.boomer += 1; },        etoiles: s => { s.stars += 1; },
-  braise: s => { s.aura += 1; },                  grimoire: s => { s.multi += 2; s.dmg *= 0.85; }, chouette: s => { s.homing = true; },
-  percant: s => { s.pierce += 2; },               ricochet: s => { s.bounce += 2; },         orbe: s => { s.size *= 1.5; s.dmg *= 1.25; },
-  bourreau: s => { s.crit += 0.15; },             sangsue: s => { s.leech += 0.04; },        pilon: s => { s.knock *= 2; },
-  aiguise: s => { s.dmg *= 1.3; },                frenesie: s => { s.rate *= 1.35; },        allonge: s => { s.area *= 1.4; },
-  pierre: s => { s.maxHp += 2; },                 eperons: s => { s.speed *= 1.15; },        echo: s => { s.echo = true; },
-  lune: s => { s.moon = true; },                  pacte: s => { s.dmg *= 2; s.maxHp -= 2; }, armure: s => { s.maxHp += 3; s.speed *= 0.9; },
-  revers: s => { s.backstab = true; },            gantelet: s => { s.shards += 1; },
+  lamebraise: s => { s.burn = true; },          venin: s => { s.poison = true; },              grimoire: s => { s.multi += 2; s.dmg *= 0.85; },
+  chouette: s => { s.homing = true; },          percant: s => { s.pierce += 2; },              ricochet: s => { s.bounce += 2; },
+  orbe: s => { s.size *= 1.5; s.dmg *= 1.25; }, bourreau: s => { s.crit += 0.15; },            sangsue: s => { s.leech += 0.04; },
+  pilon: s => { s.knock *= 2; },                aiguise: s => { s.dmg *= 1.3; },               frenesie: s => { s.rate *= 1.35; },
+  allonge: s => { s.area *= 1.4; },             pierre: s => { s.maxHp += 2; },                eperons: s => { s.speed *= 1.15; },
+  echo: s => { s.echo = true; },                lune: s => { s.moon = true; },                 pacte: s => { s.dmg *= 2; s.maxHp -= 2; },
+  armure: s => { s.maxHp += 3; s.speed *= 0.9; }, revers: s => { s.backstab = true; },         gantelet: s => { s.shards += 1; },
+  sablier: s => { s.rate *= 1.2; s.area *= 1.1; }, phenix: s => { s.phenix = true; },          couronne: s => { s.slots += 1; },
 };
+const SG_SCROLLS = { spectrale: "lames", foudre: "eclair", boomerang: "boomerang", meteore: "etoiles", braise: "feu", givre: "glace" };
 const SG_ITEM_DESC = {
-  spectrale: "Des lames fantômes tournent autour de toi.", lamebraise: "Tout ce que tu touches brûle.", venin: "Tout ce que tu touches est empoisonné.",
-  foudre: "La foudre frappe les ennemis proches.", boomerang: "Tu lances des os qui reviennent.", etoiles: "Des étoiles tombent sur les ennemis.",
-  braise: "Une aura de feu brûle ce qui t'approche.", grimoire: "+2 projectiles par tir.", chouette: "Tes projectiles cherchent les ennemis.",
-  percant: "Tes projectiles traversent 2 ennemis de plus.", ricochet: "Tes projectiles rebondissent sur les murs.", orbe: "Projectiles énormes et plus forts.",
-  bourreau: "15 % de coups critiques (triple dégâts).", sangsue: "Chaque coup peut te soigner.", pilon: "Tu repousses fort.",
-  aiguise: "+30 % de dégâts.", frenesie: "Tu attaques 35 % plus vite.", allonge: "Ton épée porte 40 % plus loin.",
+  lamebraise: "Tout ce que tu touches brûle.", venin: "Tout ce que tu touches est empoisonné.", grimoire: "+2 projectiles par tir.",
+  chouette: "Tes projectiles cherchent les ennemis.", percant: "Tes projectiles traversent 2 ennemis de plus.", ricochet: "Tes projectiles rebondissent sur les murs.",
+  orbe: "Projectiles énormes et plus forts.", bourreau: "15 % de coups critiques (triple dégâts).", sangsue: "Chaque coup peut te soigner.",
+  pilon: "Tu repousses fort.", aiguise: "+30 % de dégâts.", frenesie: "Tu attaques 35 % plus vite.", allonge: "Coups et zones 40 % plus grands.",
   pierre: "+2 PV max.", eperons: "+15 % de vitesse.", echo: "Chaque coup d'épée se répète.", lune: "Un ennemi vaincu libère quatre éclats.",
   pacte: "Dégâts doublés, 2 PV max en moins.", armure: "+3 PV max, un peu plus lent.", revers: "Ton épée frappe aussi derrière toi.", gantelet: "Tes coups d'épée projettent des éclats.",
+  sablier: "Sorts 20 % plus rapides, zones 10 % plus grandes.", phenix: "Une fois par partie, tu te relèves seul avec tous tes PV.", couronne: "+1 emplacement de sort.",
 };
+const SG_RARITY = {
+  commun:     { label: "Commun",     col: "#b8b0a0", w: 55, items: ["pierre", "eperons", "sangsue", "pilon", "allonge", "armure", "ricochet"] },
+  rare:       { label: "Rare",       col: "#5aa0e0", w: 30, items: ["aiguise", "percant", "bourreau", "lamebraise", "venin", "revers", "gantelet", "spectrale", "foudre", "boomerang", "meteore", "braise", "givre"] },
+  epique:     { label: "Épique",     col: "#b77ae0", w: 12, items: ["grimoire", "orbe", "chouette", "echo", "lune", "frenesie", "sablier"] },
+  legendaire: { label: "Légendaire", col: "#f2b54a", w: 3,  items: ["pacte", "phenix", "couronne"] },
+};
+const SG_RARITY_OF = {}; for (const [r, d] of Object.entries(SG_RARITY)) for (const id of d.items) SG_RARITY_OF[id] = r;
 const SG_COLORS = ["#e8913a", "#5aa0e0", "#7fd6a0", "#c88aff"];
 let siege = null;
 const sgOpts = { autoFire: null, autoAim: null };
@@ -117,13 +171,14 @@ function sgMove(m, o, dx, dy, fly) {
 
 // ===== Les joueurs =====
 function sgBaseStats() {
-  return { dmg: 1, rate: 1, speed: 1, area: 1, magnet: 1, maxHp: SG.playerHp, bolt: 1, multi: 0, pierce: 0, bounce: 0, size: 1, homing: false,
-    burn: false, poison: false, crit: 0, leech: 0, knock: 1, orbit: 0, aura: 0, lightning: 0, boomer: 0, stars: 0, echo: false, moon: false, backstab: false, shards: 0 };
+  return { dmg: 1, rate: 1, speed: 1, area: 1, magnet: 1, maxHp: SG.playerHp, multi: 0, pierce: 0, bounce: 0, size: 1, homing: false,
+    burn: false, poison: false, crit: 0, leech: 0, knock: 1, echo: false, moon: false, backstab: false, shards: 0, slots: SG.slots, phenix: false };
 }
 function sgMakePlayer(i, src, name, pid) {
   const h = siege.map.heart, a = (i / 4) * Math.PI * 2 + 0.6;
   const p = { i, src, name: name || `Joueur ${i + 1}`, pid: pid || "local-" + i, x: h.x + Math.cos(a) * 34, y: h.y + Math.sin(a) * 30, r: 5,
-    face: 1, aim: 0, hp: SG.playerHp, iv: 0, down: false, reviveT: 0, upg: {}, items: [], cd: { sword: 0.3, bolt: 1, boomer: 1.5, light: 2, stars: 2.5, aura: 0.5 },
+    face: 1, aim: 0, hp: SG.playerHp, iv: 0, down: false, reviveT: 0, upg: {}, items: [], vx: 0, vy: 0,
+    spells: { epee: 1, tir: 1 }, cd: { epee: 0.3, tir: 1, eclair: 1.5, feu: 0.5, boomerang: 1.2, etoiles: 2, glace: 2, poison: 1.5, storm: 0.3, puddle: 1, frost: 0.5 },
     orbitA: 0, swing: 0, swingA: 0, kills: 0, input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false, aim: false }, anim: 0 };
   p.s = sgBaseStats();
   return p;
@@ -149,7 +204,7 @@ function siegeStart(o = {}) {
   const seed = o.seed || Math.floor(Math.random() * 1e9);
   siege = {
     seed, rand: rng(seed ^ 0x51E6E), map: sgBuildMap(seed), net: o.net || null, host: o.host !== false,
-    wave: 0, phase: "prep", phaseT: SG.firstWave, toSpawn: 0, spawnT: 0, enemies: [], shots: [], foeShots: [], gems: [], fx: [], nums: [],
+    wave: 0, phase: "prep", phaseT: SG.firstWave, toSpawn: 0, spawnT: 0, enemies: [], shots: [], foeShots: [], gems: [], fx: [], nums: [], zones: [],
     level: 1, xp: 0, kills: 0, time: 0, players: [], heart: { hp: SG.heartHp, max: SG.heartHp, hitT: 0 }, nextId: 1, over: null,
     choice: null, cam: { x: 0, y: 0 }, running: true, paused: false, lastSnap: 0, remote: null,
   };
@@ -223,6 +278,7 @@ function siegeUpdate(dt) {
   for (const p of S_.players) sgUpdatePlayer(p, dt);
   sgUpdateEnemies(dt);
   sgUpdateShots(dt);
+  sgUpdateZones(dt);
   sgUpdateGems(dt);
   for (const f of S_.fx) f.t -= dt;
   S_.fx = S_.fx.filter(f => f.t > 0);
@@ -244,11 +300,15 @@ function siegeUpdate(dt) {
 function sgStartWave() {
   const S_ = siege;
   S_.wave++; S_.phase = "wave";
-  const boss = S_.wave % 5 === 0;
-  S_.toSpawn = Math.round(6 + S_.wave * 4.5 + (S_.players.length - 1) * (3 + S_.wave * 2));
+  const n = S_.players.length, lord = S_.wave === SG.finalWave || (S_.endless && S_.wave > SG.finalWave && S_.wave % 10 === 0);
+  const boss = !lord && S_.wave % 5 === 0;
+  // plus de monstres avec plus de joueurs, et à mesure que l'équipe monte de niveau
+  S_.toSpawn = Math.round((6 + S_.wave * 4.5) * (1 + SG.coopCount * (n - 1)) * (1 + SG.lvCount * (S_.level - 1)) * (lord ? 0.6 : 1));
   S_.spawnT = 0.5; S_.bossLeft = boss ? 1 : 0;
-  toast(boss ? `<b>Vague ${S_.wave}</b> · un Bélier approche des portes !` : `<b>Vague ${S_.wave}</b>`, 2400, true);
-  if (typeof SFX !== "undefined") SFX.play(boss ? "bossEnter" : "warn");
+  if (lord) { sgSpawn("seigneur"); S_.lordUp = true; }
+  toast(lord ? `<b>Vague ${S_.wave}</b> · LE SEIGNEUR DE LA HORDE ARRIVE !` : boss ? `<b>Vague ${S_.wave}</b> · un Bélier approche des portes !` : `<b>Vague ${S_.wave}</b>`, lord ? 3600 : 2400, true);
+  if (typeof SFX !== "undefined") SFX.play(boss || lord ? "bossEnter" : "warn");
+  if (lord) shake(4, 0.6);
 }
 function sgEndWave() {
   const S_ = siege;
@@ -260,10 +320,11 @@ function sgEndWave() {
   if (typeof SFX !== "undefined") SFX.play("miniBeat");
   sgOfferChoice("item");
 }
-function sgSpawn() {
+function sgSpawn(force) {
   const S_ = siege, m = S_.map, h = m.heart, w = S_.wave;
-  let type;
-  if (S_.bossLeft > 0 && S_.toSpawn <= 1 + S_.players.length) { type = "belier"; S_.bossLeft--; }
+  let type = force;
+  if (force) {}
+  else if (S_.bossLeft > 0 && S_.toSpawn <= 1 + S_.players.length) { type = "belier"; S_.bossLeft--; }
   else {
     const pool = Object.entries(SG_ENEMIES).filter(([, d]) => d.from <= w);
     const weights = pool.map(([k]) => k === "crawler" ? 4 : k === "bat" ? 3 : k === "golem" ? 1 : 2);
@@ -281,10 +342,61 @@ function sgSpawn() {
     y = Math.max(2 * T, Math.min((m.H - 3) * T, h.y + Math.sin(an) * rd * 0.75));
     if (!sgSolid(m, Math.floor(x / T), Math.floor(y / T), d.fly) && Math.hypot(x - h.x, (y - h.y) * 1.15) > SG.ringR * T + 30) break;
   }
-  const mult = (1 + 0.16 * (w - 1)) * (1 + 0.35 * (S_.players.length - 1));
+  const n = S_.players.length, mult = (1 + 0.16 * (w - 1)) * (1 + SG.coopHp * (n - 1)) * (d.boss ? 1 + 0.5 * (n - 1) : 1) * (d.lord && S_.endless ? 1 + 0.5 * Math.floor((w - SG.finalWave) / 10) : 1);
   const e = { id: S_.nextId++, type, x, y, r: d.r * (d.scale || 1), hp: d.hp * mult, max: d.hp * mult, spd: d.spd * (1 + Math.min(0.5, w * 0.02)) * (0.9 + S_.rand() * 0.2),
     cd: 0, flash: 0, burn: 0, poison: 0, stuck: 0, lx: x, ly: y, t: S_.rand() * 6, kb: { x: 0, y: 0 }, hit: {} };
-  S_.enemies.push(e); S_.toSpawn--;
+  S_.enemies.push(e); if (!force) S_.toSpawn--;
+}
+// Le Seigneur de la Horde : il annonce chaque attaque (cercle rouge), puis
+//   onde de choc (une couronne de projectiles), invocation (des monstres autour de lui) ou charge vers un héros.
+//   Sous la moitié de ses PV, il enrage : attaques plus rapprochées, onde plus dense.
+function sgLord(e, dt) {
+  const S_ = siege, rage = e.hp < e.max * 0.5;
+  if (rage && !e.raged) { e.raged = true; toast("Le Seigneur de la Horde enrage !", 2200, true); shake(3, 0.4); }
+  e.atkT = (e.atkT ?? 3) - dt;
+  if (e.chargeT > 0) e.chargeT -= dt;
+  if (e.windT > 0) {
+    e.windT -= dt;
+    if (e.windT <= 0) {
+      const n = S_.players.length;
+      if (e.next === "slam") {
+        const k = rage ? 22 : 14;
+        for (let i = 0; i < k; i++) { const a = i / k * Math.PI * 2 + e.t; S_.foeShots.push({ x: e.x, y: e.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, t: 3, r: 4, dmg: 1, heart: 3, big: true }); }
+        S_.fx.push({ kind: "boom", x: e.x, y: e.y, t: 0.4, r: 40, c: "#c4413b" }); shake(2.5, 0.25);
+      } else if (e.next === "summon") {
+        for (let i = 0; i < 3 + 2 * n + (rage ? 3 : 0); i++) {
+          const before = S_.enemies.length; sgSpawn(["crawler", "bat", "wisp", "rodeur"][i % 4]);
+          const m2 = S_.enemies[before]; if (m2) { const a = i * 1.3; m2.x = e.x + Math.cos(a) * 30; m2.y = e.y + Math.sin(a) * 24; if (sgSolid(S_.map, Math.floor(m2.x / T), Math.floor(m2.y / T), false)) { m2.x = e.x; m2.y = e.y; } }
+        }
+        S_.fx.push({ kind: "ring", x: e.x, y: e.y, t: 0.3, c: "#c88aff", r: 40 });
+      } else e.chargeT = rage ? 0.9 : 0.7;
+    }
+    return;
+  }
+  if (e.atkT <= 0) {
+    e.atkT = rage ? 2.4 : 3.6; e.windT = 0.7;
+    const opts = ["slam", "summon", "charge"]; e.next = opts[(e.atkN = (e.atkN || 0) + 1) % 3];
+    S_.fx.push({ kind: "ring", x: e.x, y: e.y, t: 0.3, c: "#e0453c", r: 46 });
+  }
+}
+function sgVictory() {
+  const S_ = siege;
+  S_.won = (S_.won || 0) + 1;
+  S_.enemies = []; S_.foeShots = []; S_.toSpawn = 0;
+  if (typeof SFX !== "undefined") SFX.play("relic");
+  S_.over = { why: "Le village est sauvé !", win: true, wave: S_.wave, kills: S_.kills, level: S_.level, time: S_.time };
+  let best = 0; try { best = +localStorage.getItem("lepuits.siege.best") || 0; } catch (e) {}
+  if (S_.wave > best) try { localStorage.setItem("lepuits.siege.best", String(S_.wave)); } catch (e) {}
+  S_.over.best = Math.max(best, S_.wave);
+  if (S_.net && S_.host) S_.net.send("end", S_.over);
+  sgShowEnd();
+}
+// après la victoire : la horde continue (mode infini, un Seigneur plus fort toutes les 10 vagues)
+function sgContinue() {
+  const S_ = siege; if (!S_ || !S_.over || !S_.over.win) return;
+  S_.over = null; S_.endless = true; S_.phase = "prep"; S_.phaseT = SG.breakTime;
+  if (S_.net && S_.host) S_.net.send("cont", {});
+  sgResume(); toast("Mode infini : la horde ne s'arrête plus.", 2600, true);
 }
 const sgGates = () => { const h = siege.map.heart, R = SG.ringR * T; return [[h.x, h.y - R / 1.15], [h.x + R, h.y], [h.x, h.y + R / 1.15], [h.x - R, h.y]]; };
 function sgUpdateEnemies(dt) {
@@ -296,9 +408,10 @@ function sgUpdateEnemies(dt) {
     if (e.burn > 0) { e.burn -= dt; e.burnT = (e.burnT || 0) - dt; if (e.burnT <= 0) { e.burnT = 0.5; sgDamage(e, 3, null, true); } }
     if (e.poison > 0) { e.poison -= dt; e.poisT = (e.poisT || 0) - dt; if (e.poisT <= 0) { e.poisT = 0.6; sgDamage(e, 2.5, null, true); } }
     if (e.hp <= 0) continue;
+    if (d.lord) sgLord(e, dt);
     // la cible : le joueur le plus proche s'il est tout près, sinon le Cœur (en passant par une porte)
     // (seulement un joueur du même côté de la palissade, sinon il resterait collé au mur ; et s'il bute trop longtemps, il lâche l'affaire)
-    let tx = h.x, ty = h.y, target = null, bd = d.boss || e.ignoreT > 0 ? 0 : 75;
+    let tx = h.x, ty = h.y, target = null, bd = d.lord ? 150 : d.boss || e.ignoreT > 0 ? 0 : 75;
     const RR = SG.ringR * T, inRing = (x, y) => Math.hypot(x - h.x, (y - h.y) * 1.15) < RR;
     if (e.ignoreT > 0) e.ignoreT -= dt;
     for (const p of S_.players) if (!p.down && (d.fly || inRing(p.x, p.y) === inRing(e.x, e.y))) { const dd = Math.hypot(p.x - e.x, p.y - e.y); if (dd < bd) { bd = dd; target = p; } }
@@ -318,7 +431,8 @@ function sgUpdateEnemies(dt) {
     }
     // rôdeur : il bondit
     if (d.lunge && dist < 70 && e.cd <= 0 && !e.lungeT) { e.lungeT = 0.35; e.cd = 2; }
-    let sp = e.spd * want * (e.lungeT > 0 ? 4 : 1) * (e.slow > 0 ? 0.5 : 1);
+    let sp = e.spd * want * (e.lungeT > 0 ? 4 : 1) * (e.chargeT > 0 ? 6 : 1) * (e.windT > 0 ? 0 : 1) * (e.slow > 0 && !d.lord ? 0.5 : 1) * (e.frozen > 0 && !d.lord ? 0 : 1);
+    if (e.frozen > 0) e.frozen -= dt;
     if (e.lungeT > 0) e.lungeT -= dt; else e.lungeT = 0;
     if (e.slow > 0) e.slow -= dt;
     const atHeart = !target && Math.hypot(e.x - h.x, e.y - h.y) < 14 + e.r;
@@ -362,6 +476,10 @@ function sgHurtPlayer(p, dmg, src) {
   if (src) { const dx = p.x - src.x, dy = p.y - src.y, d = Math.hypot(dx, dy) || 1; p.kbx = dx / d * 160; p.kby = dy / d * 160; }
   siege.fx.push({ kind: "ring", x: p.x, y: p.y, t: 0.3, c: "#c4413b" });
   if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("hurt");
+  if (p.hp <= 0 && p.s.phenix && !p.phenixUsed) {
+    p.phenixUsed = true; p.hp = p.s.maxHp; p.iv = 2;
+    siege.fx.push({ kind: "boom", x: p.x, y: p.y, t: 0.5, r: 40, c: "#f2b54a" }); toast(`${p.name} renaît de ses cendres !`, 2200); return;
+  }
   if (p.hp <= 0) { p.down = true; p.hp = 0; p.reviveT = 0; toast(siege.players.length > 1 ? `${p.name} est à terre ! Reste près de lui pour le relever.` : "Tu es à terre…", 2400); }
 }
 function sgDamage(e, dmg, p, dot) {
@@ -384,7 +502,10 @@ function sgKill(e, p) {
   S_.kills++; if (p) p.kills++;
   S_.gems.push({ x: e.x, y: e.y, v: d.xp, t: 0 });
   S_.fx.push({ kind: "puff", x: e.x, y: e.y, t: 0.3, c: d.boss ? "#c4413b" : "#e9e1cf", r: e.r });
+  const fp = S_.players.find(q => sgLv(q, "feu") >= 5);
+  if (e.burn > 0 && fp) { sgAoe(e.x, e.y, 22 * fp.s.area, 8 * sgMul(sgLv(fp, "feu")) * fp.s.dmg, fp, { dot: true, burn: 1.5 }); S_.fx.push({ kind: "boom", x: e.x, y: e.y, t: 0.3, r: 22 * fp.s.area, c: "#e8913a" }); }
   if (p && p.s.moon) for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; S_.shots.push(sgShot(p, e.x, e.y, Math.cos(a), Math.sin(a), { kind: "moon", dmg: 6, spd: 170, t: 0.5, r: 2.5, pierce: 0, noMods: true })); }
+  if (d.lord) { sgVictory(); return; }
   if (d.boss) toast("Le Bélier est abattu !", 2000);
 }
 
@@ -410,9 +531,12 @@ function sgUpdatePlayer(p, dt) {
     return;
   }
   // déplacement
-  const sp = SG.speed * s.speed;
+  const sp = SG.speed * s.speed, acc = SG.accel * dt;
   p.kbx = (p.kbx || 0) * Math.pow(0.01, dt); p.kby = (p.kby || 0) * Math.pow(0.01, dt);
-  sgMove(S_.map, p, (I.mx * sp + p.kbx) * dt, (I.my * sp + p.kby) * dt, false);
+  const app = (v, t) => v < t ? Math.min(t, v + acc) : Math.max(t, v - acc);
+  p.vx = app(p.vx || 0, I.mx * sp); p.vy = app(p.vy || 0, I.my * sp);
+  // l'invité en ligne déplace lui-même son héros (pas de retard) : l'hôte prend la position qu'il envoie
+  if (!(p.src === "net" && p.netPos)) sgMove(S_.map, p, (p.vx + p.kbx) * dt, (p.vy + p.kby) * dt, false);
   if (Math.abs(I.mx) > 0.1) p.face = Math.sign(I.mx);
   p.anim += Math.hypot(I.mx, I.my) * dt * 8;
   // la visée
@@ -425,66 +549,172 @@ function sgUpdatePlayer(p, dt) {
   const fire = I.idle ? false : (p.src === "net" ? p.autoFire : sgAutoFire()) ? !!(target || sgNearest(p, 150)) : I.fire;
   const ux = Math.cos(p.aim), uy = Math.sin(p.aim);
   for (const k in p.cd) p.cd[k] -= dt * s.rate;
-  // l'épée : un arc devant soi
-  if (fire && p.cd.sword <= 0) {
-    p.cd.sword = 0.62; p.swing = 0.16; p.swingA = p.aim;
-    sgSlash(p, p.aim);
-    if (s.backstab) sgSlash(p, p.aim + Math.PI);
+  sgCastSpells(p, dt, fire);
+}
+const sgLv = (p, id) => (p.spells && p.spells[id]) || 0;
+const sgMul = L => 1 + 0.2 * (L - 1) + (L >= 10 ? 0.6 : 0);          // dégâts selon le niveau (gros bond à la forme finale)
+function sgAoe(x, y, R, dmg, p, o = {}) {
+  for (const e of siege.enemies) if (e.hp > 0 && Math.hypot(e.x - x, e.y - y) < R + e.r) {
+    sgDamage(e, dmg, p, o.dot);
+    if (o.slow) e.slow = Math.max(e.slow || 0, o.slow);
+    if (o.freeze) e.frozen = Math.max(e.frozen || 0, o.freeze);
+    if (o.burn) e.burn = Math.max(e.burn, o.burn);
+    if (o.poison) e.poison = Math.max(e.poison, o.poison);
+  }
+}
+function sgCastSpells(p, dt, fire) {
+  const S_ = siege, s = p.s, cd = p.cd;
+  // --- Épée ---
+  const LE = sgLv(p, "epee");
+  if (LE && fire && cd.epee <= 0) {
+    cd.epee = 0.62 / (1 + 0.04 * (LE - 1)); p.swing = 0.16; p.swingA = p.aim;
+    const k = sgMul(LE);
+    sgSlash(p, p.aim, k);
+    if (s.backstab || LE >= 5) sgSlash(p, p.aim + Math.PI, k * 0.8);
+    if (LE >= 10) for (const da of [0, Math.PI]) S_.shots.push(sgShot(p, p.x, p.y, Math.cos(p.aim + da), Math.sin(p.aim + da), { kind: "wave", dmg: 12 * k, spd: 210, t: 0.6, r: 7, pierce: 99, a: p.aim + da }));
     if (s.echo) p.echoT = 0.18;
-    for (let k = 0; k < s.shards * 3; k++) { const a = p.aim + (k - (s.shards * 3 - 1) / 2) * 0.25; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { kind: "shard", dmg: 4, spd: 180, t: 0.45, r: 2 })); }
+    for (let j = 0; j < s.shards * 3; j++) { const a = p.aim + (j - (s.shards * 3 - 1) / 2) * 0.25; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { kind: "shard", dmg: 4, spd: 180, t: 0.45, r: 2 })); }
     if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("swing");
   }
-  if (p.echoT > 0) { p.echoT -= dt; if (p.echoT <= 0) sgSlash(p, p.swingA, 0.5); }
+  if (p.echoT > 0) { p.echoT -= dt; if (p.echoT <= 0) sgSlash(p, p.swingA, 0.5 * sgMul(LE || 1)); }
   p.swing = Math.max(0, p.swing - dt);
-  // le tir magique (amélioration « Tir magique », ou Grimoire)
-  const bolts = s.bolt;
-  if (bolts > 0 && p.cd.bolt <= 0 && fire) {
-    p.cd.bolt = 1.2 / (1 + 0.15 * (bolts - 1));
-    const n = 1 + s.multi + Math.floor((bolts - 1) / 2);
-    for (let k = 0; k < n; k++) { const a = p.aim + (k - (n - 1) / 2) * 0.18; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { dmg: 8 + 2 * bolts, spd: 230, t: 1.2, pierce: 0 })); }
-    if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("bolt");
+  // --- Tir magique → Rayon ---
+  const LT = sgLv(p, "tir");
+  if (LT && fire && cd.tir <= 0) {
+    const k = sgMul(LT);
+    if (LT >= 10) {
+      cd.tir = 1.3;
+      const n = 1 + Math.floor(s.multi / 2);
+      for (let j = 0; j < n; j++) sgBeam(p, p.aim + (j - (n - 1) / 2) * 0.22, 240, 5 * s.size, 26 * k);
+      if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("bolt");
+    } else {
+      cd.tir = 1.1 / (1 + 0.08 * (LT - 1));
+      const n = 1 + s.multi + (LT >= 3 ? 1 : 0) + (LT >= 7 ? 1 : 0);
+      for (let j = 0; j < n; j++) { const a = p.aim + (j - (n - 1) / 2) * 0.16; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { dmg: 10 * k, spd: 240, t: 1.2, pierce: LT >= 5 ? 2 : 0 })); }
+      if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("bolt");
+    }
   }
-  // le boomerang
-  if (s.boomer > 0 && p.cd.boomer <= 0 && fire) {
-    p.cd.boomer = 1.8;
-    for (let k = 0; k < s.boomer + Math.floor(s.multi / 2); k++) { const a = p.aim + (k - (s.boomer - 1) / 2) * 0.4; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { kind: "boomer", dmg: 9, spd: 190, t: 1.6, r: 4, pierce: 99, back: true })); }
+  // --- Boomerang → Tourbillon ---
+  const LB = sgLv(p, "boomerang");
+  if (LB && fire && cd.boomerang <= 0) {
+    cd.boomerang = 1.8 / (1 + 0.06 * (LB - 1));
+    const k = sgMul(LB), dirs = LB >= 10 ? [0, Math.PI / 2, Math.PI, -Math.PI / 2] : LB >= 5 ? [0, Math.PI] : [0];
+    const n = 1 + Math.floor(LB / 4) + Math.floor(s.multi / 2);
+    for (const d0 of dirs) for (let j = 0; j < n; j++) { const a = p.aim + d0 + (j - (n - 1) / 2) * 0.4; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { kind: "boomer", dmg: 9 * k, spd: 190, t: 1.6, r: LB >= 10 ? 7 : 4, pierce: 99, back: true })); }
   }
-  // la foudre
-  if (s.lightning > 0 && p.cd.light <= 0) {
+  // --- Éclair → Tempête ---
+  const LL = sgLv(p, "eclair");
+  if (LL && cd.eclair <= 0) {
     const t0 = sgNearest(p, 190);
     if (t0) {
-      p.cd.light = 2.2 / (1 + 0.2 * (s.lightning - 1));
-      let cur = t0; const done = new Set();
-      for (let k = 0; k < 2 + s.lightning && cur; k++) {
-        done.add(cur); sgDamage(cur, 10 * s.dmg, p); S_.fx.push({ kind: "bolt", x: cur.x, y: cur.y, t: 0.18 });
-        let nx = null, nd = 70; for (const e of S_.enemies) if (!done.has(e)) { const d = Math.hypot(e.x - cur.x, e.y - cur.y); if (d < nd) { nd = d; nx = e; } }
-        cur = nx;
+      cd.eclair = 2.2 / (1 + 0.1 * (LL - 1));
+      const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 190);
+      for (let c = 0; c < (LL >= 5 ? 2 : 1); c++) sgChain(p, c === 0 ? t0 : near[Math.floor(S_.rand() * near.length)] || t0, 2 + LL, 10 * sgMul(LL), LL >= 5 ? 0.45 : 0);
+    }
+  }
+  if (LL >= 10 && cd.storm <= 0) {
+    cd.storm = 0.32;
+    const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 230);
+    if (near.length) sgChain(p, near[Math.floor(S_.rand() * near.length)], 2, 14 * sgMul(LL), 0.2);
+  }
+  // --- Feu → Brasier ---
+  const LF = sgLv(p, "feu");
+  p.fireR = LF ? (24 + 4 * LF) * s.area * (LF >= 10 ? 1.5 : 1) : 0;
+  if (LF && cd.feu <= 0) { cd.feu = 0.5; sgAoe(p.x, p.y, p.fireR, (2 + LF) * s.dmg * (LF >= 10 ? 1.5 : 1), p, { dot: true, burn: 1.5 }); }
+  if (LF >= 10 && cd.puddle <= 0) {
+    cd.puddle = 1.4; const a = S_.rand() * Math.PI * 2, d = p.fireR * (0.5 + S_.rand() * 0.7);
+    S_.zones.push({ kind: "fire", x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d, r: 18 * s.area, t: 3.5, dur: 3.5, dps: 10 * s.dmg, owner: p.i, tick: 0 });
+  }
+  // --- Lames tournantes → Danse des lames ---
+  const LO = sgLv(p, "lames");
+  if (LO) {
+    const fast = LO >= 5, k = sgMul(LO), n = 1 + Math.floor((LO + 1) / 2) + Math.floor(s.multi / 2);
+    p.orbitA += dt * (fast ? 4.4 : 3.2);
+    const rings = [[26 * s.area, 1]]; if (LO >= 10) rings.push([46 * s.area, -1.3]);
+    p.orbs = [];
+    for (const [R, dir] of rings) for (let j = 0; j < n; j++) {
+      const a = p.orbitA * dir + j * Math.PI * 2 / n, ox = p.x + Math.cos(a) * R, oy = p.y + Math.sin(a) * R, sz = (fast ? 6.5 : 5) * s.size;
+      p.orbs.push([ox, oy, a]);
+      for (const e of S_.enemies) if (Math.hypot(e.x - ox, e.y - oy) < sz + e.r && !(e.hit["o" + p.i] > S_.time)) { e.hit["o" + p.i] = S_.time + 0.4; sgDamage(e, 7 * k * s.dmg, p); }
+    }
+  } else p.orbs = null;
+  // --- Pluie d'étoiles → Météores ---
+  const LS = sgLv(p, "etoiles");
+  if (LS && cd.etoiles <= 0) {
+    const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 210);
+    if (near.length) {
+      cd.etoiles = 2.6 / (1 + 0.05 * (LS - 1));
+      const k = sgMul(LS);
+      for (let j = 0; j < 2 + LS && near.length; j++) {
+        const e = near[Math.floor(S_.rand() * near.length)];
+        S_.fx.push({ kind: "star", x: e.x, y: e.y, t: 0.35 });
+        sgDamage(e, 12 * k * s.dmg, p);
+        if (LS >= 5) { sgAoe(e.x, e.y, 16 * s.area, 5 * k * s.dmg, p); S_.fx.push({ kind: "ring", x: e.x, y: e.y, t: 0.25, c: "#ffe08a", r: 16 * s.area }); }
+      }
+      if (LS >= 10) for (let j = 0; j < 2; j++) { const e = near[Math.floor(S_.rand() * near.length)]; S_.zones.push({ kind: "meteor", x: e.x, y: e.y, r: 34 * s.area, t: 0.7, dur: 0.7, dmg: 40 * k * s.dmg, owner: p.i }); }
+    }
+  }
+  // --- Glace → Blizzard ---
+  const LG = sgLv(p, "glace");
+  if (LG && cd.glace <= 0 && sgNearest(p, (40 + 5 * LG) * s.area)) {
+    cd.glace = 3.2 / (1 + 0.08 * (LG - 1));
+    const R = (40 + 5 * LG) * s.area;
+    sgAoe(p.x, p.y, R, 6 * sgMul(LG) * s.dmg, p, { slow: 2, freeze: LG >= 5 ? 0.8 : 0 });
+    S_.fx.push({ kind: "nova", x: p.x, y: p.y, t: 0.35, r: R, c: "#9fe0ff" });
+  }
+  p.frostR = LG >= 10 ? 70 * s.area : 0;
+  if (LG >= 10 && cd.frost <= 0) { cd.frost = 0.5; sgAoe(p.x, p.y, p.frostR, 3 * sgMul(LG) * s.dmg, p, { dot: true, slow: 0.7 }); }
+  // --- Poison → Marais ---
+  const LP = sgLv(p, "poison");
+  if (LP && cd.poison <= 0) {
+    const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 170);
+    if (near.length) {
+      cd.poison = 2.8 / (1 + 0.07 * (LP - 1));
+      const big = LP >= 10 ? 1.6 : 1;
+      for (let j = 0; j < 1 + (LP >= 5 ? 1 : 0) + Math.floor(s.multi / 2); j++) {
+        const e = near[Math.floor(S_.rand() * near.length)];
+        S_.zones.push({ kind: "vial", x: p.x, y: p.y, tx: e.x, ty: e.y, t: 0.4, dur: 0.4, owner: p.i,
+          then: { kind: "poison", r: (16 + 2 * LP) * s.area * big, t: (3 + 0.2 * LP) * (LP >= 10 ? 2 : 1), dps: 4 * sgMul(LP) * s.dmg, slow: LP >= 10, owner: p.i } });
       }
     }
   }
-  // pluie d'étoiles
-  if (s.stars > 0 && p.cd.stars <= 0) {
-    p.cd.stars = 2.6;
-    const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 200);
-    for (let k = 0; k < 2 + s.stars && near.length; k++) { const e = near[Math.floor(S_.rand() * near.length)]; S_.fx.push({ kind: "star", x: e.x, y: e.y, t: 0.35 }); sgDamage(e, 12 * s.dmg, p); }
+}
+// Un rayon (forme finale du Tir magique) : touche tout ce qui est sur sa ligne
+function sgBeam(p, a, len, w, dmg) {
+  const S_ = siege, ux = Math.cos(a), uy = Math.sin(a);
+  for (const e of S_.enemies) {
+    const dx = e.x - p.x, dy = e.y - p.y, t = dx * ux + dy * uy;
+    if (t < 0 || t > len) continue;
+    if (Math.abs(dx * uy - dy * ux) < w + e.r) sgDamage(e, dmg, p);
   }
-  // aura de feu
-  if (s.aura > 0 && p.cd.aura <= 0) {
-    p.cd.aura = 0.5;
-    const R = (26 + 6 * s.aura) * s.area;
-    for (const e of S_.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < R + e.r) { sgDamage(e, (2 + s.aura) * s.dmg, p, true); e.burn = Math.max(e.burn, 1.5); }
+  S_.fx.push({ kind: "beam", x: p.x, y: p.y, a, r: len, t: 0.22, c: "#7fe8ff" });
+}
+// Un éclair qui rebondit d'ennemi en ennemi
+function sgChain(p, first, hops, dmg, stun) {
+  const S_ = siege; let cur = first, px = p.x, py = p.y; const done = new Set();
+  for (let k = 0; k < hops && cur; k++) {
+    done.add(cur); sgDamage(cur, dmg * p.s.dmg, p); if (stun) cur.frozen = Math.max(cur.frozen || 0, stun);
+    S_.fx.push({ kind: "zap", x: px, y: py, a: cur.x, r: cur.y, t: 0.16 });
+    px = cur.x; py = cur.y;
+    let nx = null, nd = 70; for (const e of S_.enemies) if (!done.has(e) && e.hp > 0) { const d = Math.hypot(e.x - cur.x, e.y - cur.y); if (d < nd) { nd = d; nx = e; } }
+    cur = nx;
   }
-  // lames qui tournent
-  if (s.orbit > 0) {
-    p.orbitA += dt * 3.2;
-    const n = s.orbit + Math.floor(s.multi / 2), R = 26 * s.area;
-    p.orbs = [];
-    for (let k = 0; k < n; k++) {
-      const a = p.orbitA + k * Math.PI * 2 / n, ox = p.x + Math.cos(a) * R, oy = p.y + Math.sin(a) * R;
-      p.orbs.push([ox, oy]);
-      for (const e of S_.enemies) if (Math.hypot(e.x - ox, e.y - oy) < 5 * s.size + e.r && !(e.hit["o" + p.i] > S_.time)) { e.hit["o" + p.i] = S_.time + 0.45; sgDamage(e, 7 * s.dmg, p); }
+}
+// Les zones au sol : flaques de feu, de poison, fioles en vol, météores qui tombent
+function sgUpdateZones(dt) {
+  const S_ = siege, out = [];
+  for (const z of S_.zones) {
+    z.t -= dt; const p = S_.players[z.owner];
+    if (z.kind === "vial") { if (z.t <= 0) { out.push({ ...z.then, x: z.tx, y: z.ty, dur: z.then.t, tick: 0 }); S_.fx.push({ kind: "ring", x: z.tx, y: z.ty, t: 0.25, c: "#9cbf6a", r: z.then.r }); continue; } }
+    else if (z.kind === "meteor") { if (z.t <= 0) { sgAoe(z.x, z.y, z.r, z.dmg, p, { burn: 2 }); S_.fx.push({ kind: "boom", x: z.x, y: z.y, t: 0.4, r: z.r }); continue; } }
+    else {
+      z.tick -= dt;
+      if (z.tick <= 0) { z.tick = 0.5; sgAoe(z.x, z.y, z.r, z.dps * 0.5, p, { dot: true, poison: z.kind === "poison" ? 2 : 0, burn: z.kind === "fire" ? 1 : 0, slow: z.slow ? 0.7 : 0 }); }
+      if (z.t <= 0) continue;
     }
-  } else p.orbs = null;
+    out.push(z);
+  }
+  S_.zones = out.slice(-80);
 }
 function sgSlash(p, a, k = 1) {
   const S_ = siege, s = p.s, R = 26 * s.area;
@@ -546,7 +776,7 @@ function sgCamera(dt) {
   const S_ = siege, live = S_.local.filter(p => !p.down);
   const L = live.length ? live : S_.local.length ? S_.local : S_.players;
   const cx = L.reduce((a, p) => a + p.x, 0) / L.length, cy = L.reduce((a, p) => a + p.y, 0) / L.length;
-  S_.cam.x += (cx - VW / 2 - S_.cam.x) * Math.min(1, dt * 6); S_.cam.y += (cy - VH / 2 - S_.cam.y) * Math.min(1, dt * 6);
+  S_.cam.x += (cx - VW / 2 - S_.cam.x) * Math.min(1, dt * 11); S_.cam.y += (cy - VH / 2 - S_.cam.y) * Math.min(1, dt * 11);
   S_.cam.x = Math.max(0, Math.min(S_.map.W * T - VW, S_.cam.x)); S_.cam.y = Math.max(0, Math.min(S_.map.H * T - VH, S_.cam.y));
   // à deux sur le même écran : on reste dans l'image
   for (const p of S_.local) { p.x = Math.max(S_.cam.x + 6, Math.min(S_.cam.x + VW - 6, p.x)); p.y = Math.max(S_.cam.y + 8, Math.min(S_.cam.y + VH - 6, p.y)); }
@@ -563,24 +793,79 @@ function sgGameOver(why) {
 }
 
 // ===== Choix : niveau (amélioration) ou fin de vague (objet) =====
+const sgSlotsUsed = p => Object.keys(p.spells || {}).length;
+const sgSlotsMax = p => p.s.slots;
+// La carte d'un sort : nouveau (prend un emplacement) ou niveau suivant (éveil au 5, forme finale au 10)
+function sgSpellOpt(p, id, plus = 1) {
+  const d = SG_SPELLS[id], L = sgLv(p, id), to = Math.min(10, L + plus);
+  let desc = L ? `Niveau ${L} → ${to} : plus fort.` : `${d.desc} Prend un emplacement (${sgSlotsUsed(p) + 1}/${sgSlotsMax(p)}).`;
+  if (L < 5 && to >= 5) desc = `${L ? `Niveau ${L} → ${to}. ` : ""}ÉVEIL : ${d.awake}`;
+  if (to >= 10) desc = `FORME FINALE : ${d.final}. ${d.finalDesc}`;
+  const name = to >= 10 ? d.final : d.name;
+  return { id: (plus > 1 ? "scroll:" : "spell:") + id, spell: id, name, lv: to, isNew: !L, tag: to >= 10 ? "final" : to >= 5 && L < 5 ? "awake" : "", desc };
+}
+// Les sorts qu'on peut encore prendre ou monter
+const sgSpellChoices = p => Object.keys(SG_SPELLS).filter(id => sgLv(p, id) ? sgLv(p, id) < 10 : sgSlotsUsed(p) < sgSlotsMax(p));
 function sgOptionsFor(p, kind) {
   const S_ = siege, r = S_.rand;
   if (kind === "item") {
-    const pool = Object.keys(SG_ITEMS).filter(id => ITEM[id] && !p.items.includes(id));
-    const out = []; while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
-    return sgFillBonus(p, out.map(id => ({ id: "item:" + id, item: id, name: ITEM[id].name, desc: SG_ITEM_DESC[id] })));
+    // trois objets ; la rareté se tire pour chaque carte (plus de belles raretés au fil des vagues, une épique garantie toutes les 5 vagues)
+    const sh = Math.min(1, S_.wave / 20), W = { commun: 55 - 25 * sh, rare: 30 + 5 * sh, epique: 12 + 12 * sh, legendaire: 3 + 8 * sh };
+    const order = ["commun", "rare", "epique", "legendaire"], out = [], used = new Set();
+    const ok = id => {
+      if (used.has(id) || !ITEM[id]) return false;
+      if (SG_SCROLLS[id]) return sgSpellChoices(p).includes(SG_SCROLLS[id]);
+      return !p.items.includes(id);
+    };
+    for (let k = 0; k < 3; k++) {
+      let x = r() * order.reduce((a, o) => a + W[o], 0), rar = "commun";
+      for (const o of order) { x -= W[o]; if (x <= 0) { rar = o; break; } }
+      if (k === 0 && S_.wave % 5 === 0 && order.indexOf(rar) < 2) rar = "epique";
+      // si la rareté tirée n'a plus rien, on essaie la plus proche
+      let pick = null;
+      for (const o of [rar, ...order.slice().sort((a, b) => Math.abs(order.indexOf(a) - order.indexOf(rar)) - Math.abs(order.indexOf(b) - order.indexOf(rar)))]) {
+        const pool = SG_RARITY[o].items.filter(ok); if (pool.length) { pick = pool[Math.floor(r() * pool.length)]; rar = o; break; }
+      }
+      if (!pick) break;
+      used.add(pick);
+      if (SG_SCROLLS[pick]) { const o = sgSpellOpt(p, SG_SCROLLS[pick], 2); out.push({ ...o, id: "item:" + pick, item: pick, rarity: rar, name: `${ITEM[pick].name}`, desc: `Parchemin : ${SG_SPELLS[SG_SCROLLS[pick]].name} +2 niveaux. ${o.desc}` }); }
+      else out.push({ id: "item:" + pick, item: pick, rarity: rar, name: ITEM[pick].name, desc: SG_ITEM_DESC[pick] });
+    }
+    return sgFillBonus(p, out);
   }
-  const pool = SG_UPGRADES.filter(u => (p.upg[u.id] || 0) < u.max);
-  const out = []; while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
-  return sgFillBonus(p, out.map(u => ({ id: "upg:" + u.id, name: u.name + (p.upg[u.id] ? ` ${p.upg[u.id] + 1}` : ""), desc: u.desc })));
+  // niveau : un mélange de sorts (nouveaux ou à monter) et d'améliorations passives
+  const pool = [];
+  for (const id of sgSpellChoices(p)) pool.push({ w: sgLv(p, id) ? 3 : 2, o: () => sgSpellOpt(p, id) });
+  for (const u of SG_UPGRADES) if ((p.upg[u.id] || 0) < u.max) pool.push({ w: u.team ? 0.7 : 1.5, o: () => ({ id: "upg:" + u.id, name: u.name + (p.upg[u.id] ? ` ${p.upg[u.id] + 1}` : ""), desc: u.desc }) });
+  const out = [];
+  while (out.length < 3 && pool.length) {
+    let x = r() * pool.reduce((a, q) => a + q.w, 0), i = 0;
+    for (; i < pool.length - 1; i++) { x -= pool[i].w; if (x <= 0) break; }
+    out.push(pool.splice(i, 1)[0].o());
+  }
+  return sgFillBonus(p, out);
 }
 function sgFillBonus(p, opts) {
   const pool = SG_BONUS.slice(), r = siege.rand;
   while (opts.length < 3 && pool.length) { const b = pool.splice(Math.floor(r() * pool.length), 1)[0], n = (p.bonus && p.bonus[b.id]) || 0; opts.push({ id: "bonus:" + b.id, name: b.name + (n ? ` ${n + 1}` : ""), desc: b.desc }); }
   return opts;
 }
+function sgLearn(p, id, plus) {
+  const before = sgLv(p, id);
+  if (!before && sgSlotsUsed(p) >= sgSlotsMax(p)) return;
+  const L = Math.min(10, before + plus); p.spells[id] = L;
+  const d = SG_SPELLS[id];
+  if (before < 10 && L >= 10) { toast(`<b>${d.final}</b> ! ${d.name} atteint sa forme finale.`, 3000, true); siege.fx.push({ kind: "boom", x: p.x, y: p.y, t: 0.6, r: 46, c: d.col }); if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("relic"); }
+  else if (before < 5 && L >= 5) { toast(`${d.name} s'éveille : ${d.awake}`, 2600); siege.fx.push({ kind: "ring", x: p.x, y: p.y, t: 0.4, r: 30, c: d.col }); }
+}
 function sgApply(p, opt) {
-  if (opt.startsWith("item:")) { p.items.push(opt.slice(5)); }
+  if (!opt) return;
+  if (opt.startsWith("spell:")) { sgLearn(p, opt.slice(6), 1); return; }
+  if (opt.startsWith("item:")) {
+    const id = opt.slice(5);
+    if (SG_SCROLLS[id]) { sgLearn(p, SG_SCROLLS[id], 2); return; }
+    p.items.push(id);
+  }
   else if (opt.startsWith("bonus:")) {
     const b = SG_BONUS.find(x => x.id === opt.slice(6)); if (!b) return;
     if (b.team) { siege.heart.max += 25; siege.heart.hp = siege.heart.max; }
@@ -637,7 +922,13 @@ function sgRemotePick(pid, opt, id) {
 }
 function sgResume() { menuEl.hidden = true; screen = "play"; document.body.classList.remove("pvp-drafting"); try { cv.focus({ preventScroll: true }); } catch (e) {} }
 function sgCards(opts) {
-  return `<nav class="pvp-cards">${opts.map(o => `<button class="mi pvp-card" data-act="sgPick:${o.id}">${o.item ? `<canvas class="pvp-ic" width="8" height="10" data-icon="${o.item}"></canvas><span class="pvp-card-f">Objet</span>` : `<span class="sg-up">${o.name[0]}</span><span class="pvp-card-f">Amélioration</span>`}<span class="pvp-card-n">${o.name}</span><small>${o.desc}</small></button>`).join("")}</nav>`;
+  return `<nav class="pvp-cards">${opts.map(o => {
+    const rar = o.rarity ? SG_RARITY[o.rarity] : null;
+    const icon = o.item ? `<canvas class="pvp-ic" width="8" height="10" data-icon="${o.item}"></canvas>` : o.spell ? `<canvas class="pvp-ic" width="8" height="8" data-spell="${o.spell}"></canvas>` : `<span class="sg-up">${o.name[0]}</span>`;
+    const kind = rar ? rar.label : o.spell ? (o.tag === "final" ? "Forme finale" : o.tag === "awake" ? "Éveil" : o.isNew ? "Nouveau sort" : `Sort · niv ${o.lv}`) : o.id.startsWith("bonus:") ? "Bonus" : "Amélioration";
+    const cls = rar ? `sg-r-${o.rarity}` : o.tag === "final" ? "sg-r-legendaire" : o.tag === "awake" ? "sg-r-epique" : o.spell ? "sg-r-spell" : "";
+    return `<button class="mi pvp-card ${cls}" data-act="sgPick:${o.id}" ${rar ? `style="--rar:${rar.col}"` : ""}>${icon}<span class="pvp-card-f">${kind}</span><span class="pvp-card-n">${o.name}${o.spell && !o.rarity && !o.isNew && o.tag !== "final" ? ` <small class="sg-lv">${o.lv}</small>` : ""}</span><small>${o.desc}</small></button>`;
+  }).join("")}</nav>`;
 }
 function sgShowChoice(p, kind, opts, done) {
   if (!opts || !opts.length) { done(""); return; }   // rien à proposer : on passe
@@ -646,9 +937,10 @@ function sgShowChoice(p, kind, opts, done) {
   screen = "siegemenu"; menuRoot = "siege"; document.body.classList.add("pvp-drafting");
   const who = siege.players.length > 1 ? `<span class="sg-who" style="color:${SG_COLORS[p.i]}">${p.name}</span> · ` : "";
   el.innerHTML = `<div><span class="kicker">${who}${kind === "item" ? `Vague ${siege.wave} repoussée` : `Niveau ${siege.level}`}</span><div class="big small">${kind === "item" ? "Choisis un objet" : "Choisis une amélioration"}</div></div>
-    ${sgCards(opts)}<p class="pvp-help">${p.items.length ? "Tes objets : " + p.items.map(id => ITEM[id].name).join(", ") : ""}</p>`;
+    ${sgCards(opts)}<p class="pvp-help">Sorts (${sgSlotsUsed(p)}/${sgSlotsMax(p)}) : ${Object.entries(p.spells).map(([id, L]) => `${L >= 10 ? SG_SPELLS[id].final : SG_SPELLS[id].name} ${L}`).join(" · ")}${p.items.length ? "<br>Objets : " + p.items.map(id => ITEM[id].name).join(", ") : ""}</p>`;
   showPanel("siege");
   for (const c of el.querySelectorAll("canvas[data-icon]")) { const src = itemIconCanvas(c.dataset.icon), x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.drawImage(src, 0, 0); }
+  for (const c of el.querySelectorAll("canvas[data-spell]")) { const x = c.getContext("2d"); sgDrawSpellIcon(x, c.dataset.spell, 0, 0, 1); }
   const b = el.querySelector(".pvp-card"); if (b) b.focus({ preventScroll: true });
 }
 function sgShowWait() {
@@ -662,129 +954,352 @@ function sgShowEnd() {
   const o = siege.over, el = document.getElementById("siegePanel");
   screen = "siegemenu"; menuRoot = "siege"; document.body.classList.remove("pvp-drafting");
   el.innerHTML = `<div><span class="kicker">Siège du village</span><div class="big small">${o.why}</div></div>
-    <div class="pvp-result lose"><b>Vague ${o.wave}</b><span>${o.kills} monstres vaincus · niveau ${o.level} · ${fmtTime(o.time)}</span><span>Record : vague ${o.best}</span></div>
-    <nav class="menu-list">${siege.net ? "" : `<button class="mi" data-act="sgAgain">Rejouer</button>`}<button class="mi" data-act="sgQuit">Retour au menu</button></nav>`;
+    <div class="pvp-result ${o.win ? "win" : "lose"}"><b>${o.win ? "Victoire !" : `Vague ${o.wave}`}</b><span>${o.win ? `Le Seigneur de la Horde est tombé à la vague ${o.wave}. ` : ""}${o.kills} monstres vaincus · niveau ${o.level} · ${fmtTime(o.time)}</span><span>Record : vague ${o.best}</span></div>
+    <nav class="menu-list">${o.win && (!siege.net || siege.host) ? `<button class="mi" data-act="sgContinue">Continuer : mode infini<small>la horde ne s'arrête plus</small></button>` : ""}${o.win && siege.net && !siege.host ? `<p class="pvp-help">L'hôte peut continuer en mode infini.</p>` : ""}${siege.net ? "" : `<button class="mi" data-act="sgAgain">Rejouer</button>`}<button class="mi" data-act="sgQuit">Retour au menu</button></nav>`;
   showPanel("siege");
 }
 
 // ===== Dessin =====
+/* Le sol est dessiné une fois pour toutes dans une image (herbe nuancée, fleurs, chemins de terre vers les portes,
+   place pavée autour du Cœur) ; arbres, rochers, pieux et maisons sont triés en profondeur avec les personnages ;
+   la nuit tombe sur la carte et les feux (Cœur, sorts, héros) l'éclairent. */
+const sgHash = (c, r, k = 0) => { let h = (c * 374761393 + r * 668265263 + k * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function sgGround(m) {
+  if (m.groundCv) return m.groundCv;
+  const cvs = document.createElement("canvas"); cvs.width = m.W * T; cvs.height = m.H * T;
+  const g = cvs.getContext("2d"); if (!g) return null;
+  const cx = m.W / 2, cy = m.H / 2;
+  for (let r = 0; r < m.H; r++) for (let c = 0; c < m.W; c++) {
+    const x = c * T, y = r * T, t = m.g[r][c], n = sgHash(c, r), d = Math.hypot(c + 0.5 - cx, (r + 0.5 - cy) * 1.15);
+    const inside = d < SG.ringR, plaza = d < 2.6, path = !inside && (Math.abs(c + 0.5 - cx) < 1.6 || Math.abs(r + 0.5 - cy) < 1.4);
+    if (t === "#") { g.fillStyle = "#16200f"; g.fillRect(x, y, T, T); g.fillStyle = "#1f2c16"; for (let k = 0; k < 4; k++) g.fillRect(x + sgHash(c, r, k) * 14, y + sgHash(r, c, k) * 14, 3, 3); continue; }
+    if (plaza) {
+      g.fillStyle = "#6a6258"; g.fillRect(x, y, T, T);
+      for (let k = 0; k < 4; k++) { const bx = x + (k % 2) * 8 + ((r % 2) * 4), by = y + Math.floor(k / 2) * 8; g.fillStyle = sgHash(c, r, k) < 0.5 ? "#7a7266" : "#857c6e"; g.fillRect(bx + 0.5, by + 0.5, 7, 7); g.fillStyle = "#958b7c"; g.fillRect(bx + 0.5, by + 0.5, 7, 1); }
+      continue;
+    }
+    if (inside || path) {
+      g.fillStyle = inside ? "#69583c" : "#5c4e33"; g.fillRect(x, y, T, T);
+      for (let k = 0; k < 14; k++) { const v = sgHash(c, r, k + 9); g.fillStyle = v < 0.35 ? (inside ? "#736144" : "#655638") : v < 0.7 ? (inside ? "#61513a" : "#55472f") : v < 0.9 ? "#7d6a4a" : "#4a3d28"; g.fillRect(x + Math.floor(sgHash(c, r, k) * 16), y + Math.floor(sgHash(r, c, k) * 16), v < 0.7 ? 2 : 1, 1); }
+      if (path && n < 0.25) { g.fillStyle = "#3f5a2c"; g.fillRect(x + n * 40 % 14, y + 13, 2, 2); }
+      continue;
+    }
+    // l'herbe : trois nuances, des brins, quelques fleurs
+    // une base unique + des taches douces à cheval sur les cases (pas d'effet damier)
+    g.fillStyle = "#32442a"; g.fillRect(x, y, T, T);
+    const blot = (sgHash(Math.floor(c / 3), Math.floor(r / 3), 11) + sgHash(Math.floor((c + 1) / 2), Math.floor((r + 1) / 2), 12)) / 2;
+    if (blot > 0.62) { g.fillStyle = "rgba(70,100,50,0.25)"; g.fillRect(x, y, T, T); } else if (blot < 0.3) { g.fillStyle = "rgba(20,30,14,0.22)"; g.fillRect(x, y, T, T); }
+    for (let k = 0; k < 12; k++) { const bx = x + Math.floor(sgHash(c, r, k) * 16), by = y + Math.floor(sgHash(r, c, k + 3) * 15), v = sgHash(c, r, k + 7); g.fillStyle = v < 0.4 ? "#456238" : v < 0.75 ? "#2a3b21" : "#3c5530"; g.fillRect(bx, by, 1, v < 0.4 ? 2 : 1); }
+    if (n > 0.93) { const fc = ["#e8d27a", "#c88aff", "#e9e1cf", "#e07a6a"][Math.floor(sgHash(r, c, 2) * 4)]; g.fillStyle = fc; g.fillRect(x + 5, y + 6, 1, 1); g.fillRect(x + 10, y + 9, 1, 1); g.fillStyle = "#4f7a3a"; g.fillRect(x + 5, y + 7, 1, 2); }
+    if (d < SG.ringR + 1.2) { g.fillStyle = "rgba(20,14,8,0.18)"; g.fillRect(x, y, T, T); }
+  }
+  // une ombre douce le long de la lisière
+  const grd = g.createLinearGradient(0, 0, 0, 3 * T); grd.addColorStop(0, "rgba(0,0,0,0.5)"); grd.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grd; g.fillRect(0, T, m.W * T, 3 * T);
+  return (m.groundCv = cvs);
+}
+// les éléments du décor qui ont une hauteur (triés avec les personnages)
+function sgProps(m) {
+  if (m.props) return m.props;
+  const out = [];
+  for (let r = 0; r < m.H; r++) for (let c = 0; c < m.W; c++) {
+    const t = m.g[r][c];
+    if (t === "T") out.push({ kind: "tree", x: c * T + 8, y: r * T + 14, v: sgHash(c, r, 5) });
+    else if (t === "R") out.push({ kind: "rock", x: c * T + 8, y: r * T + 13, v: sgHash(c, r, 6) });
+    else if (t === "W") out.push({ kind: "post", x: c * T + 8, y: r * T + 14, v: sgHash(c, r, 7) });
+  }
+  for (const hs of m.houses) out.push({ kind: "house", x: hs.c * T, y: (hs.r + hs.h) * T, hs, v: sgHash(hs.c, hs.r) });
+  return (m.props = out);
+}
+const sgPx = v => Math.round(v * S) / S;
+function sgDrawProp(o, ox, oy) {
+  const x = sgPx(o.x - ox), y = sgPx(o.y - oy);
+  if (x < -60 || x > VW + 60 || y < -20 || y > VH + 70) return;
+  const sh = (w, h) => { ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2); ctx.fill(); };
+  if (o.kind === "tree") {
+    sh(9, 3);
+    ctx.fillStyle = "#3a2414"; ctx.fillRect(x - 1.5, y - 8, 3, 8); ctx.fillStyle = "#5a3a20"; ctx.fillRect(x - 1.5, y - 8, 1, 8);
+    const sway = Math.sin(time * 1.3 + o.v * 6) * 0.6, big = o.v > 0.5 ? 1.15 : 1;
+    const blob = (bx, by, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + bx * big + sway, y + by * big, r * big, 0, Math.PI * 2); ctx.fill(); };
+    blob(0, -14, 8.5, "#1e3018"); blob(-3, -15, 6.5, "#2c4422"); blob(3, -17, 6, "#36532a"); blob(-1, -19, 4.5, "#45683a"); blob(1, -21, 2.5, "#5a8248");
+  } else if (o.kind === "rock") {
+    sh(7, 2.5);
+    ctx.fillStyle = "#3e3a46"; ctx.fillRect(x - 6, y - 8, 12, 8); ctx.fillRect(x - 5, y - 10, 10, 2);
+    ctx.fillStyle = "#5a5664"; ctx.fillRect(x - 5, y - 9, 7, 3); ctx.fillStyle = "#77738a"; ctx.fillRect(x - 4, y - 9, 3, 1);
+    if (o.v > 0.5) { ctx.fillStyle = "#3f5a2c"; ctx.fillRect(x + 1, y - 10, 4, 2); }
+  } else if (o.kind === "post") {
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(x - 7, y - 1, 15, 3);
+    for (const [dx, hh] of [[-5, 15], [0, 17], [5, 15]]) {
+      ctx.fillStyle = "#4a2e18"; ctx.fillRect(x + dx - 2, y - hh, 4, hh);
+      ctx.fillStyle = "#8a5a30"; ctx.fillRect(x + dx - 2, y - hh, 2, hh);
+      ctx.fillStyle = "#b07a44"; ctx.fillRect(x + dx - 1, y - hh - 2, 2, 2);
+    }
+    ctx.fillStyle = "#6a4a2a"; ctx.fillRect(x - 8, y - 10, 16, 1.5);
+  } else if (o.kind === "house") {
+    const hs = o.hs, w = hs.w * T, hh = hs.h * T, top = y - hh;
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(x + 2, y - 2, w + 2, 4);
+    // murs en planches
+    ctx.fillStyle = "#6e5236"; ctx.fillRect(x, top + hh * 0.42, w, hh * 0.58);
+    ctx.fillStyle = "#5a4230"; for (let k = 3; k < w; k += 4) ctx.fillRect(x + k, top + hh * 0.42, 1, hh * 0.58);
+    ctx.fillStyle = "#8a6a48"; ctx.fillRect(x, top + hh * 0.42, w, 1);
+    // porte et fenêtre éclairée
+    ctx.fillStyle = "#2a1a10"; ctx.fillRect(x + w / 2 - 2.5, y - 8, 5, 8); ctx.fillStyle = "#c08a50"; ctx.fillRect(x + w / 2 + 1, y - 4, 1, 1);
+    const fl = 0.8 + 0.2 * Math.sin(time * 6 + o.v * 9);
+    ctx.fillStyle = `rgba(242,${170 + 30 * fl | 0},80,1)`; ctx.fillRect(x + 4, y - 12, 4, 4); if (w > 36) ctx.fillRect(x + w - 8, y - 12, 4, 4);
+    ctx.fillStyle = "#2a1a10"; ctx.fillRect(x + 5.5, y - 12, 1, 4);
+    // toit en tuiles
+    ctx.fillStyle = "#5a2018"; ctx.fillRect(x - 3, top - 1, w + 6, hh * 0.46);
+    for (let rr = 0; rr < hh * 0.46 - 2; rr += 3) { ctx.fillStyle = rr % 6 ? "#8a3428" : "#7a2e24"; ctx.fillRect(x - 3, top + rr, w + 6, 2); }
+    ctx.fillStyle = "#b04a3a"; ctx.fillRect(x - 3, top - 2, w + 6, 2);
+    // cheminée et fumée
+    ctx.fillStyle = "#4a4652"; ctx.fillRect(x + w - 9, top - 7, 4, 6);
+    for (let k = 0; k < 3; k++) { const ph = (time * 0.6 + k / 3 + o.v) % 1; ctx.fillStyle = `rgba(200,195,190,${0.35 * (1 - ph)})`; ctx.fillRect(x + w - 8 + Math.sin(ph * 6) * 2, top - 9 - ph * 14, 2 + ph * 2, 2 + ph * 2); }
+  }
+}
 function siegeDraw() {
   const S_ = siege; if (!S_) return;
-  ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.imageSmoothingEnabled = false;
   const m = S_.map, ox = Math.round(S_.cam.x * S) / S, oy = Math.round(S_.cam.y * S) / S;
-  ctx.fillStyle = "#2c3a22"; ctx.fillRect(0, 0, VW, VH);
-  const c0 = Math.max(0, Math.floor(ox / T)), c1 = Math.min(m.W - 1, Math.floor((ox + VW) / T)), r0 = Math.max(0, Math.floor(oy / T)), r1 = Math.min(m.H - 1, Math.floor((oy + VH) / T));
+  ctx.fillStyle = "#16200f"; ctx.fillRect(0, 0, VW, VH);
+  const gcv = sgGround(m);
+  if (gcv) ctx.drawImage(gcv, ox, oy, VW, VH, 0, 0, VW, VH);
   const h = m.heart;
-  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
-    const x = c * T - ox, y = r * T - oy, t = m.g[r][c], n = (c * 7 + r * 13) % 5;
-    const inside = Math.hypot(c + 0.5 - m.W / 2, (r + 0.5 - m.H / 2) * 1.15) < SG.ringR;
-    ctx.fillStyle = inside ? (n ? "#6b5a3e" : "#615136") : (n ? "#34452a" : "#2f3f26"); ctx.fillRect(x, y, T, T);
-    if (!inside && n === 0) { ctx.fillStyle = "#4a6338"; ctx.fillRect(x + 4, y + 6, 1.34, 2); ctx.fillRect(x + 10, y + 3, 1.34, 2); }
-    if (t === "W") { ctx.fillStyle = "#3a2414"; ctx.fillRect(x + 1, y, T - 2, T); ctx.fillStyle = "#8a5a30"; ctx.fillRect(x + 2, y - 3, 3, T); ctx.fillRect(x + 7, y - 4, 3, T + 1); ctx.fillRect(x + 12, y - 3, 3, T); ctx.fillStyle = "#c08a50"; ctx.fillRect(x + 2, y - 3, 3, 1.34); ctx.fillRect(x + 7, y - 4, 3, 1.34); ctx.fillRect(x + 12, y - 3, 3, 1.34); }
-    if (t === "#") { ctx.fillStyle = "#1c2416"; ctx.fillRect(x, y, T, T); }
-    if (t === "R") { ctx.fillStyle = "#4a4652"; ctx.fillRect(x + 2, y + 4, 12, 10); ctx.fillStyle = "#6a6672"; ctx.fillRect(x + 3, y + 4, 10, 3); }
-    if (t === "T") { ctx.fillStyle = "#3a2414"; ctx.fillRect(x + 7, y + 9, 3, 6); ctx.fillStyle = "#24361c"; ctx.fillRect(x + 1, y - 2, 14, 12); ctx.fillStyle = "#3a5a2a"; ctx.fillRect(x + 3, y - 3, 10, 9); ctx.fillStyle = "#4f7a3a"; ctx.fillRect(x + 5, y - 2, 4, 3); }
-  }
-  for (const hs of m.houses) {
-    const x = hs.c * T - ox, y = hs.r * T - oy, w = hs.w * T, hh = hs.h * T;
-    ctx.fillStyle = "#3a2a1e"; ctx.fillRect(x, y + 4, w, hh - 4);
-    ctx.fillStyle = "#8a6a48"; ctx.fillRect(x + 1, y + hh * 0.45, w - 2, hh * 0.55 - 1);
-    ctx.fillStyle = "#7a2e24"; ctx.fillRect(x - 2, y - 2, w + 4, hh * 0.5);
-    ctx.fillStyle = "#a8433a"; ctx.fillRect(x - 2, y - 2, w + 4, 3);
-    ctx.fillStyle = "#2a1a10"; ctx.fillRect(x + w / 2 - 2, y + hh - 7, 4, 6);
-  }
-  // le Cœur du village : une grande flamme sur un autel
-  const hx = h.x - ox, hy = h.y - oy, k = 0.5 + 0.5 * Math.sin(time * 5);
-  ctx.fillStyle = "rgba(242,180,80,0.18)"; ctx.beginPath(); ctx.arc(hx, hy, 22 + k * 3, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#4a4652"; ctx.fillRect(hx - 9, hy - 2, 18, 9); ctx.fillStyle = "#6a6672"; ctx.fillRect(hx - 9, hy - 2, 18, 2);
-  ctx.fillStyle = S_.heart.hitT > 0 ? "#ffffff" : "#e8913a"; ctx.fillRect(hx - 5, hy - 12 - k * 2, 10, 11 + k * 2);
-  ctx.fillStyle = "#f2d45a"; ctx.fillRect(hx - 3, hy - 9 - k * 2, 6, 8 + k * 2); ctx.fillStyle = "#fff3b8"; ctx.fillRect(hx - 1, hy - 6, 2, 5);
+  // les zones au sol (sous les personnages)
+  for (const z of S_.zones) sgDrawZone(z, ox, oy);
   // l'expérience
-  for (const g of S_.gems) { const x = g.x - ox, y = g.y - oy - Math.abs(Math.sin(g.t * 4)); ctx.fillStyle = g.v >= 5 ? "#c88aff" : "#7fd6c0"; ctx.fillRect(x - 1.5, y - 2, 3, 4); ctx.fillRect(x - 2, y - 1, 4, 2); }
-  // monstres et joueurs, triés de haut en bas
-  const list = [...S_.enemies.map(e => ({ y: e.y, e })), ...S_.players.map(p => ({ y: p.y, p }))].sort((a, b) => a.y - b.y);
-  for (const o of list) o.e ? sgDrawEnemy(o.e, ox, oy) : sgDrawPlayer(o.p, ox, oy);
+  for (const g of S_.gems) {
+    const x = sgPx(g.x - ox), y = sgPx(g.y - oy - Math.abs(Math.sin(g.t * 4)) * 1.5), big = g.v >= 5;
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(x - 1.5, g.y - oy + 2, 3, 1);
+    ctx.fillStyle = big ? "#8a4ad0" : "#3a9a88"; ctx.fillRect(x - 2, y - 1, 4, 2); ctx.fillRect(x - 1, y - 3, 2, 6);
+    ctx.fillStyle = big ? "#c88aff" : "#7fd6c0"; ctx.fillRect(x - 1, y - 2, 2, 3);
+    if (Math.sin(g.t * 5 + g.x) > 0.8) { ctx.fillStyle = "#ffffff"; ctx.fillRect(x - 1, y - 2, 1, 1); }
+  }
+  // le Cœur du village : un brasier sur un autel de pierre
+  const hx = sgPx(h.x - ox), hy = sgPx(h.y - oy), k = 0.5 + 0.5 * Math.sin(time * 5);
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(hx, hy + 6, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#3e3a46"; ctx.fillRect(hx - 10, hy - 3, 20, 10); ctx.fillStyle = "#5a5664"; ctx.fillRect(hx - 10, hy - 3, 20, 3); ctx.fillStyle = "#77738a"; ctx.fillRect(hx - 9, hy - 3, 18, 1);
+  ctx.fillStyle = "#2a1a10"; ctx.fillRect(hx - 7, hy - 5, 14, 3);
+  const hit = S_.heart.hitT > 0;
+  for (let j = 0; j < 7; j++) { const ph = (time * 1.6 + j / 7) % 1, fx = hx + Math.sin(j * 2.3 + time * 3) * (5 - ph * 4), fy = hy - 6 - ph * 18; ctx.fillStyle = hit ? "#ffffff" : ph < 0.35 ? "#fff3b8" : ph < 0.7 ? "#f2b54a" : "#e8613a"; const sz = (1 - ph) * 5 + 1; ctx.fillRect(fx - sz / 2, fy - sz / 2, sz, sz); }
+  ctx.fillStyle = hit ? "#ffffff" : "#e8913a"; ctx.fillRect(hx - 4, hy - 11 - k * 2, 8, 7 + k * 2); ctx.fillStyle = "#f2d45a"; ctx.fillRect(hx - 2.5, hy - 9 - k * 2, 5, 5 + k * 2); ctx.fillStyle = "#fff3b8"; ctx.fillRect(hx - 1, hy - 7, 2, 3);
+  // décor, monstres et joueurs, triés de haut en bas
+  const list = [];
+  for (const o of sgProps(m)) if (o.x - ox > -60 && o.x - ox < VW + 60 && o.y - oy > -20 && o.y - oy < VH + 70) list.push({ y: o.y, d: o });
+  for (const e of S_.enemies) list.push({ y: e.y + e.r * 0.6, e });
+  for (const p of S_.players) list.push({ y: p.y + 5, p });
+  list.sort((a, b) => a.y - b.y);
+  for (const o of list) o.e ? sgDrawEnemy(o.e, ox, oy) : o.p ? sgDrawPlayer(o.p, ox, oy) : sgDrawProp(o.d, ox, oy);
   // tirs
-  for (const q of S_.shots) {
-    const x = q.x - ox, y = q.y - oy, col = SG_COLORS[q.owner] || "#7fc8d6";
-    if (q.kind === "boomer") { ctx.save(); ctx.translate(x, y); ctx.rotate(q.age * 14); ctx.fillStyle = "#e6dcc8"; ctx.fillRect(-4, -1, 8, 2); ctx.fillRect(-1, -4, 2, 8); ctx.restore(); }
-    else { ctx.fillStyle = q.kind === "moon" ? "#eaf3ff" : q.kind === "shard" ? "#c9c2b4" : q.kind === "ember" || q.owner === -1 ? "#f2b54a" : col; ctx.fillRect(x - q.r, y - q.r, q.r * 2, q.r * 2); ctx.fillStyle = "#fff"; ctx.fillRect(x - q.r / 3, y - q.r / 3, q.r / 1.5, q.r / 1.5); }
-  }
-  for (const q of S_.foeShots) { ctx.fillStyle = "#e6dcc8"; ctx.fillRect(q.x - ox - 2, q.y - oy - 2, 4, 4); }
+  for (const q of S_.shots) sgDrawShot(q, ox, oy);
+  for (const q of S_.foeShots) { const x = sgPx(q.x - ox), y = sgPx(q.y - oy);
+    if (q.big) { ctx.globalAlpha = 0.4; ctx.fillStyle = "#e0453c"; ctx.fillRect(x - 4, y - 4, 8, 8); ctx.globalAlpha = 1; ctx.fillStyle = "#c4413b"; ctx.fillRect(x - 2.5, y - 2.5, 5, 5); ctx.fillStyle = "#ffd0c8"; ctx.fillRect(x - 1, y - 1, 2, 2); }
+    else { ctx.fillStyle = "#8a7a62"; ctx.fillRect(x - 2.5, y - 2.5, 5, 5); ctx.fillStyle = "#e6dcc8"; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); } }
   // effets
-  for (const f of S_.fx) {
-    const x = f.x - ox, y = f.y - oy;
-    if (f.kind === "slash") { ctx.strokeStyle = f.c; ctx.globalAlpha = Math.min(1, f.t / 0.1); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, f.r * 0.85, f.a - 1.1, f.a + 1.1); ctx.stroke(); ctx.lineWidth = 1; ctx.globalAlpha = 1; }
-    else if (f.kind === "ring") { ctx.strokeStyle = f.c; ctx.globalAlpha = f.t / 0.3; ctx.beginPath(); ctx.arc(x, y, (f.r || 14) * (1.2 - f.t), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
-    else if (f.kind === "puff") { ctx.fillStyle = f.c; ctx.globalAlpha = f.t / 0.3; for (let i = 0; i < 6; i++) { const a = i * 1.05; ctx.fillRect(x + Math.cos(a) * (0.3 - f.t) * 40, y + Math.sin(a) * (0.3 - f.t) * 40, 2, 2); } ctx.globalAlpha = 1; }
-    else if (f.kind === "bolt") { ctx.fillStyle = "#fff3b8"; ctx.fillRect(x - 1, y - 40, 2, 40); ctx.fillStyle = "rgba(242,212,90,0.5)"; ctx.fillRect(x - 3, y - 40, 6, 40); }
-    else if (f.kind === "star") { ctx.fillStyle = "#f2d45a"; ctx.fillRect(x - 1, y - 30 * f.t / 0.35 - 2, 2, 6); ctx.fillRect(x - 3, y - 30 * f.t / 0.35, 6, 2); }
-  }
+  for (const f of S_.fx) sgDrawFx(f, ox, oy);
   for (const n of S_.nums) { ctx.globalAlpha = Math.min(1, n.t * 3); drawTinyText(n.x - ox, n.y - oy, String(n.v), n.c); }
   ctx.globalAlpha = 1;
-  // la nuit tombe doucement sur les bords
-  const gr = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.4, VW / 2, VH / 2, VW * 0.65);
-  gr.addColorStop(0, "rgba(10,8,20,0)"); gr.addColorStop(1, "rgba(10,8,20,0.55)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, VW, VH);
+  sgDrawLight(ox, oy);
   sgDrawHud();
 }
+// la nuit et les lumières : une couche sombre percée par les feux
+function sgDrawLight(ox, oy) {
+  const S_ = siege;
+  if (!sgDrawLight.cv) { sgDrawLight.cv = document.createElement("canvas"); sgDrawLight.cv.width = VW; sgDrawLight.cv.height = VH; }
+  const L = sgDrawLight.cv, g = L.getContext && L.getContext("2d"); if (!g || !g.createRadialGradient) return;
+  g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, VW, VH);
+  g.fillStyle = "rgba(10,8,26,0.5)"; g.fillRect(0, 0, VW, VH);
+  g.globalCompositeOperation = "destination-out";
+  const hole = (x, y, r, a = 1) => { if (x < -r || y < -r || x > VW + r || y > VH + r) return; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); };
+  const h = S_.map.heart;
+  hole(h.x - ox, h.y - oy - 6, 95 + Math.sin(time * 5) * 3, 1);
+  for (const p of S_.players) hole(p.x - ox, p.y - oy, p.down ? 30 : 62, 0.9);
+  for (const z of S_.zones) if (z.kind === "fire") hole(z.x - ox, z.y - oy, z.r * 2, 0.7);
+  for (const f of S_.fx) if (f.kind === "beam" || f.kind === "boom" || f.kind === "zap") hole(f.x - ox, f.y - oy, 50, 0.6);
+  for (const hs of S_.map.houses) hole(hs.c * T + 6 - ox, (hs.r + hs.h) * T - 10 - oy, 18, 0.5);
+  g.globalCompositeOperation = "source-over";
+  ctx.drawImage(L, 0, 0);
+  // un halo chaud autour du Cœur
+  const hx = h.x - ox, hy = h.y - oy - 6, gr = ctx.createRadialGradient(hx, hy, 0, hx, hy, 60);
+  gr.addColorStop(0, `rgba(242,160,60,${0.18 + 0.04 * Math.sin(time * 5)})`); gr.addColorStop(1, "rgba(242,160,60,0)");
+  ctx.fillStyle = gr; ctx.fillRect(hx - 60, hy - 60, 120, 120);
+}
+function sgDrawZone(z, ox, oy) {
+  const x = z.x - ox, y = z.y - oy;
+  if (x < -60 || y < -60 || x > VW + 60 || y > VH + 60) return;
+  const life = z.dur ? Math.max(0, Math.min(1, z.t / Math.min(0.5, z.dur))) : 1;
+  if (z.kind === "poison") {
+    ctx.globalAlpha = 0.55 * life; ctx.fillStyle = "#4a6a2a"; ctx.beginPath(); ctx.ellipse(x, y, z.r, z.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.6 * life; ctx.fillStyle = "#7fae4a"; ctx.beginPath(); ctx.ellipse(x, y, z.r * 0.7, z.r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = life; for (let k = 0; k < 4; k++) { const ph = (time * 0.8 + k / 4 + z.x * 0.01) % 1; ctx.fillStyle = "#c8e08a"; ctx.fillRect(x + Math.cos(k * 1.7) * z.r * 0.5, y + Math.sin(k * 2.3) * z.r * 0.3 - ph * 5, 1.5, 1.5); }
+  } else if (z.kind === "fire") {
+    ctx.globalAlpha = 0.45 * life; ctx.fillStyle = "#8a2a14"; ctx.beginPath(); ctx.ellipse(x, y, z.r, z.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = life; for (let k = 0; k < 6; k++) { const ph = (time * 1.8 + k / 6) % 1, a = k * 1.05 + z.x; ctx.fillStyle = ph < 0.4 ? "#fff3b8" : ph < 0.7 ? "#f2b54a" : "#e8613a"; const sz = (1 - ph) * 3 + 1; ctx.fillRect(x + Math.cos(a) * z.r * 0.6, y + Math.sin(a) * z.r * 0.35 - ph * 8, sz, sz); }
+  } else if (z.kind === "vial") {
+    const k = 1 - z.t / z.dur, vx = z.x + (z.tx - z.x) * k, vy = z.y + (z.ty - z.y) * k - Math.sin(k * Math.PI) * 20;
+    ctx.fillStyle = "#9cbf6a"; ctx.fillRect(vx - ox - 2, vy - oy - 2, 4, 4); ctx.fillStyle = "#e9e1cf"; ctx.fillRect(vx - ox - 1, vy - oy - 4, 2, 2);
+  } else if (z.kind === "meteor") {
+    const k = 1 - z.t / z.dur;
+    ctx.globalAlpha = 0.25 + 0.35 * k; ctx.fillStyle = "#c4413b"; ctx.beginPath(); ctx.ellipse(x, y, z.r * k, z.r * 0.6 * k, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    const my = y - (1 - k) * 120; ctx.fillStyle = "#e8613a"; ctx.fillRect(x - 5, my - 5, 10, 10); ctx.fillStyle = "#f2d45a"; ctx.fillRect(x - 3, my - 3, 6, 6); ctx.fillStyle = "rgba(242,180,80,0.5)"; ctx.fillRect(x - 3, my - 20, 6, 15);
+  }
+  ctx.globalAlpha = 1;
+}
+function sgDrawShot(q, ox, oy) {
+  const x = sgPx(q.x - ox), y = sgPx(q.y - oy), col = SG_COLORS[q.owner] || "#7fc8d6";
+  if (x < -20 || y < -20 || x > VW + 20 || y > VH + 20) return;
+  if (q.kind === "boomer") { ctx.save(); ctx.translate(x, y); ctx.rotate((q.age || time) * 14); const r = q.r || 4; ctx.fillStyle = "#8a7a62"; ctx.fillRect(-r, -1.5, r * 2, 3); ctx.fillRect(-1.5, -r, 3, r * 2); ctx.fillStyle = "#e6dcc8"; ctx.fillRect(-r + 0.5, -0.5, r * 2 - 1, 1); ctx.fillRect(-0.5, -r + 0.5, 1, r * 2 - 1); ctx.restore(); return; }
+  if (q.kind === "wave") { ctx.save(); ctx.translate(x, y); ctx.rotate(q.a != null ? q.a : Math.atan2(q.vy || 0, q.vx || 1)); ctx.strokeStyle = "rgba(230,240,255,0.9)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-4, 0, q.r, -1.1, 1.1); ctx.stroke(); ctx.strokeStyle = "rgba(160,200,255,0.5)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(-6, 0, q.r, -1, 1); ctx.stroke(); ctx.lineWidth = 1; ctx.restore(); return; }
+  const c = q.kind === "moon" ? "#eaf3ff" : q.kind === "shard" ? "#c9c2b4" : q.kind === "ember" || q.owner === -1 ? "#f2b54a" : col, r = q.r || 3;
+  // une traînée, un halo, un cœur blanc
+  if (q.vx != null) { ctx.globalAlpha = 0.35; ctx.fillStyle = c; ctx.fillRect(x - q.vx * 0.025 - r * 0.6, y - q.vy * 0.025 - r * 0.6, r * 1.2, r * 1.2); }
+  ctx.globalAlpha = 0.35; ctx.fillStyle = c; ctx.fillRect(x - r - 1, y - r - 1, r * 2 + 2, r * 2 + 2); ctx.globalAlpha = 1;
+  ctx.fillStyle = c; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.fillStyle = "#fff"; ctx.fillRect(x - r / 3, y - r / 3, r / 1.5, r / 1.5);
+}
+function sgDrawFx(f, ox, oy) {
+  const x = f.x - ox, y = f.y - oy;
+  if (f.kind === "slash") { ctx.strokeStyle = f.c; ctx.globalAlpha = Math.min(1, f.t / 0.1); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, f.r * 0.85, f.a - 1.1, f.a + 1.1); ctx.stroke(); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, f.r * 0.85, f.a - 0.7, f.a + 0.7); ctx.stroke(); ctx.globalAlpha = 1; }
+  else if (f.kind === "ring") { ctx.strokeStyle = f.c; ctx.globalAlpha = Math.max(0, f.t / 0.3); ctx.beginPath(); ctx.arc(x, y, (f.r || 14) * (1.2 - f.t), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
+  else if (f.kind === "puff") { ctx.fillStyle = f.c; ctx.globalAlpha = Math.max(0, f.t / 0.3); for (let i = 0; i < 8; i++) { const a = i * 0.785 + f.x; ctx.fillRect(x + Math.cos(a) * (0.3 - f.t) * 45, y + Math.sin(a) * (0.3 - f.t) * 45 - (0.3 - f.t) * 10, 2, 2); } ctx.globalAlpha = 1; }
+  else if (f.kind === "bolt" || f.kind === "zap") {
+    // un éclair en zigzag
+    const x2 = f.kind === "zap" ? f.a - ox : x, y2 = f.kind === "zap" ? f.r - oy : y, x1 = f.kind === "zap" ? x : x + 4, y1 = f.kind === "zap" ? y : y - 60;
+    ctx.globalAlpha = Math.min(1, f.t / 0.1);
+    for (const [col, w] of [["rgba(242,212,90,0.45)", 4], ["#fff3b8", 1.5]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x1, y1);
+      for (let k = 1; k < 5; k++) { const t = k / 5; ctx.lineTo(x1 + (x2 - x1) * t + (sgHash(k, Math.floor(time * 20)) - 0.5) * 8, y1 + (y2 - y1) * t + (sgHash(Math.floor(time * 20), k) - 0.5) * 8); }
+      ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.lineWidth = 1; ctx.globalAlpha = 1;
+  }
+  else if (f.kind === "star") { const k = f.t / 0.35; ctx.fillStyle = "#ffe08a"; ctx.fillRect(x - 1, y - 34 * k - 2, 2, 7); ctx.fillRect(x - 3, y - 34 * k, 6, 2); ctx.fillStyle = "rgba(255,224,138,0.4)"; ctx.fillRect(x - 1, y - 34 * k - 14, 2, 12); }
+  else if (f.kind === "beam") {
+    const ux = Math.cos(f.a), uy = Math.sin(f.a), x2 = x + ux * f.r, y2 = y + uy * f.r, k = Math.max(0, f.t / 0.22);
+    for (const [col, w] of [["rgba(80,200,255,0.3)", 10 * k + 2], ["rgba(127,232,255,0.8)", 5 * k + 1], ["#ffffff", 2 * k + 0.5]]) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x2, y2 - 4); ctx.stroke(); }
+    ctx.lineWidth = 1;
+  }
+  else if (f.kind === "nova") { const k = 1 - f.t / 0.35; ctx.globalAlpha = 0.4 * (1 - k); ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(x, y, f.r * k, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, f.r * k, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
+  else if (f.kind === "boom") { const k = 1 - f.t / 0.4; ctx.globalAlpha = Math.max(0, 0.6 * (1 - k)); ctx.fillStyle = f.c || "#f2b54a"; ctx.beginPath(); ctx.arc(x, y, f.r * (0.4 + k * 0.6), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.fillStyle = "#fff3b8"; ctx.beginPath(); ctx.arc(x, y, f.r * 0.4 * (1 - k), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+}
 function sgDrawEnemy(e, ox, oy) {
-  const d = SG_ENEMIES[e.type], sc = d.scale || 1, x = e.x - ox, y = e.y - oy;
+  const d = SG_ENEMIES[e.type], sc = d.scale || 1, x = sgPx(e.x - ox), y = sgPx(e.y - oy);
   if (x < -40 || y < -40 || x > VW + 40 || y > VH + 40) return;
-  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(x - e.r, y + e.r * 0.6, e.r * 2, 2);
+  ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.beginPath(); ctx.ellipse(x, y + e.r * 0.6, e.r * 1.1, e.r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
   const step = Math.floor(e.t * 6) % 2;
   const name = d.sprite === "golem" ? "golem0" : d.sprite === "wisp" || d.sprite === "bat" || d.sprite === "rodeur" || d.sprite === "squelette" || d.sprite === "crawler" ? d.sprite + step : d.sprite + "0";
   if (!SPRITES[name]) { ctx.fillStyle = "#c4413b"; ctx.fillRect(x - e.r, y - e.r, e.r * 2, e.r * 2); return; }
   const w = spriteW(name), h = spriteH(name), flip = siege.map.heart.x < e.x;
-  ctx.save(); ctx.translate(x, y + e.r * 0.6); ctx.scale(sc, sc);
-  drawSprite(name, -w / 2, -h, flip, e.flash > 0);
+  const hop = d.fly ? Math.sin(e.t * 6) * 1.5 : 0;
+  if (d.lord) {   // une aura rouge qui pulse sous le Seigneur
+    const k = 0.5 + 0.5 * Math.sin(time * (e.raged ? 9 : 4));
+    ctx.globalAlpha = 0.25 + 0.15 * k; ctx.fillStyle = "#c4413b"; ctx.beginPath(); ctx.ellipse(x, y + e.r * 0.6, e.r * 1.8, e.r * 0.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  ctx.save(); ctx.translate(x, y + e.r * 0.6 - hop); ctx.scale(sc, sc);
+  // le flash de coup : bref et intermittent sur les boss (sinon ils resteraient blancs sous les coups)
+  drawSprite(name, -w / 2, -h, flip, e.flash > 0 && (!d.boss || Math.floor(time * 30) % 4 === 0));
+  if (d.lord) {
+    // la couronne
+    ctx.fillStyle = "#f2b54a"; ctx.fillRect(-4, -h - 3, 8, 2); ctx.fillRect(-4, -h - 5, 1.5, 2); ctx.fillRect(-0.75, -h - 6, 1.5, 3); ctx.fillRect(2.5, -h - 5, 1.5, 2);
+    ctx.fillStyle = "#e0453c"; ctx.fillRect(-0.5, -h - 3, 1, 1);
+  }
   ctx.restore();
-  if (d.boss || e.hp < e.max) { ctx.fillStyle = "rgba(10,8,14,0.7)"; ctx.fillRect(x - 8, y - h * sc - 2, 16, 2); ctx.fillStyle = d.boss ? "#c4413b" : "#e9e1cf"; ctx.fillRect(x - 8, y - h * sc - 2, 16 * Math.max(0, e.hp / e.max), 2); }
-  if (e.burn > 0 && Math.random() < 0.3) { ctx.fillStyle = "#f2b54a"; ctx.fillRect(x + (Math.random() - 0.5) * 8, y - 6, 1.34, 1.34); }
-  if (e.poison > 0 && Math.random() < 0.3) { ctx.fillStyle = "#9cbf6a"; ctx.fillRect(x + (Math.random() - 0.5) * 8, y - 2, 1.34, 1.34); }
+  if (e.frozen > 0) { ctx.globalAlpha = 0.45; ctx.fillStyle = "#9fe0ff"; ctx.fillRect(x - w * sc / 2, y + e.r * 0.6 - h * sc, w * sc, h * sc); ctx.globalAlpha = 1; }
+  else if (e.slow > 0) { ctx.fillStyle = "#cdefff"; if (Math.random() < 0.3) ctx.fillRect(x + (Math.random() - 0.5) * 8, y - 4 - Math.random() * 6, 1, 1); }
+  if (d.boss || e.hp < e.max) { const bw = d.boss ? 30 : 14; ctx.fillStyle = "rgba(10,8,14,0.75)"; ctx.fillRect(x - bw / 2 - 0.5, y - h * sc - 3.5, bw + 1, 3); ctx.fillStyle = d.boss ? "#c4413b" : "#e9e1cf"; ctx.fillRect(x - bw / 2, y - h * sc - 3, bw * Math.max(0, e.hp / e.max), 2); }
+  if (e.burn > 0 && Math.random() < 0.5) { ctx.fillStyle = Math.random() < 0.5 ? "#f2b54a" : "#e8613a"; ctx.fillRect(x + (Math.random() - 0.5) * 9, y - 4 - Math.random() * 8, 1.5, 1.5); }
+  if (e.poison > 0 && Math.random() < 0.4) { ctx.fillStyle = "#9cbf6a"; ctx.fillRect(x + (Math.random() - 0.5) * 9, y - 2 - Math.random() * 6, 1.5, 1.5); }
 }
 function sgDrawPlayer(p, ox, oy) {
-  const x = p.x - ox, y = p.y - oy, col = SG_COLORS[p.i];
-  ctx.fillStyle = col; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.ellipse(x, y + 5, 6, 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  const x = sgPx(p.x - ox), y = sgPx(p.y - oy), col = SG_COLORS[p.i];
+  // zones de sorts autour du héros (sous lui)
+  if (p.fireR > 0) {
+    ctx.globalAlpha = 0.16; ctx.fillStyle = "#e8613a"; ctx.beginPath(); ctx.arc(x, y, p.fireR, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    for (let k = 0; k < 10; k++) { const a = k * 0.628 + time * 1.5, ph = (time * 2 + k * 0.37) % 1; ctx.fillStyle = ph < 0.4 ? "#fff3b8" : ph < 0.7 ? "#f2b54a" : "#e8613a"; ctx.fillRect(x + Math.cos(a) * p.fireR * 0.92, y + Math.sin(a) * p.fireR * 0.92 - ph * 5, 1.5 + (1 - ph), 1.5 + (1 - ph)); }
+  }
+  if (p.frostR > 0) {
+    ctx.globalAlpha = 0.14; ctx.fillStyle = "#9fe0ff"; ctx.beginPath(); ctx.arc(x, y, p.frostR, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 0.8;
+    for (let k = 0; k < 14; k++) { const a = k * 0.449 - time * 2.2, rr = p.frostR * (0.3 + ((k * 0.37 + time * 0.5) % 1) * 0.7); ctx.fillStyle = "#eaf8ff"; ctx.fillRect(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 1, 1); }
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = col; ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.ellipse(x, y + 5, 6, 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
   if (p.down) {
     ctx.save(); ctx.translate(x, y + 4); ctx.rotate(Math.PI / 2); drawSprite("hero_idle0", -6, -14, false, false); ctx.restore();
     if (p.reviveT > 0) { ctx.fillStyle = "#7fd6a0"; ctx.fillRect(x - 8, y - 12, 16 * p.reviveT / SG.revive, 2); }
     drawTinyText(x, y - 20, "A TERRE", "#c4413b"); return;
   }
-  if (p.iv > 0 && Math.floor(time * 20) % 2) return;
-  const moving = Math.hypot(p.input.mx || 0, p.input.my || 0) > 0.2;
-  const f = moving ? ["hero_run0", "hero_run1", "hero_run2", "hero_run1"][Math.floor(p.anim) % 4] : "hero_idle0";
-  drawSprite(f, x - 6, y - 13, p.face < 0, false);
-  // l'arme pointe vers la visée
-  const ax = Math.cos(p.aim), ay = Math.sin(p.aim);
-  ctx.fillStyle = "#e9e1cf"; for (let k = 4; k < 11; k += 1.5) ctx.fillRect(x + ax * k - 0.67, y - 5 + ay * k - 0.67, 1.34, 1.34);
-  if (p.orbs) for (const [bx, by] of p.orbs) { ctx.fillStyle = "rgba(190,215,255,0.9)"; ctx.fillRect(bx - ox - 2 * p.s.size, by - oy - 2 * p.s.size, 4 * p.s.size, 4 * p.s.size); }
-  if (p.s.aura > 0) { ctx.strokeStyle = "rgba(242,150,60,0.35)"; ctx.beginPath(); ctx.arc(x, y, (26 + 6 * p.s.aura) * p.s.area, 0, Math.PI * 2); ctx.stroke(); }
-  if (siege.players.length > 1) drawTinyText(x, y - 22, p.name.slice(0, 10).toUpperCase(), col);
+  if (!(p.iv > 0 && Math.floor(time * 20) % 2)) {
+    const moving = Math.hypot(p.input.mx || 0, p.input.my || 0) > 0.2;
+    const f = moving ? ["hero_run0", "hero_run1", "hero_run2", "hero_run1"][Math.floor(p.anim) % 4] : "hero_idle0";
+    const bob = moving ? 0 : Math.round(Math.sin(time * 3) * 0.5);
+    drawSprite(f, x - 6, y - 13 + bob, p.face < 0, false);
+    // l'arme pointe vers la visée
+    const ax = Math.cos(p.aim), ay = Math.sin(p.aim);
+    ctx.fillStyle = "#c9c2b4"; for (let k = 5; k < 12; k += 1) ctx.fillRect(x + ax * k - 0.5, y - 5 + ay * k - 0.5, 1, 1);
+    ctx.fillStyle = col; ctx.fillRect(x + ax * 4 - 1, y - 5 + ay * 4 - 1, 2, 2);
+  }
+  // les lames tournantes
+  if (p.orbs) for (const o of p.orbs) {
+    const bx = o[0] - ox, by = o[1] - oy, a = (o[2] || 0) + Math.PI / 2, L2 = 4 * (p.s ? p.s.size : 1);
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(a);
+    ctx.globalAlpha = 0.35; ctx.fillStyle = "#bed7ff"; ctx.fillRect(-L2 - 2, -1.5, L2 * 2 + 4, 3); ctx.globalAlpha = 1;
+    ctx.fillStyle = "#eaf3ff"; ctx.fillRect(-L2, -1, L2 * 2, 2); ctx.fillStyle = "#ffffff"; ctx.fillRect(-L2 + 1, -0.5, L2, 1);
+    ctx.restore();
+  }
+  if (siege.players.length > 1) drawTinyText(x, y - 23, p.name.slice(0, 10).toUpperCase(), col);
 }
 function sgDrawHud() {
   const S_ = siege;
   // le Cœur du village
-  ctx.fillStyle = "rgba(10,8,14,0.75)"; ctx.fillRect(VW / 2 - 61, 4, 122, 9);
-  ctx.fillStyle = "#3a2a2a"; ctx.fillRect(VW / 2 - 60, 5, 120, 7);
-  ctx.fillStyle = S_.heart.hp / S_.heart.max < 0.3 ? "#e0453c" : "#e8913a"; ctx.fillRect(VW / 2 - 60, 5, 120 * Math.max(0, S_.heart.hp / S_.heart.max), 7);
-  drawTinyText(VW / 2, 15, `COEUR DU VILLAGE ${Math.max(0, Math.ceil(S_.heart.hp))}`, "#f6efe0");
+  const fr = Math.max(0, S_.heart.hp / S_.heart.max), bx = VW / 2 - 60;
+  ctx.fillStyle = "rgba(10,8,14,0.8)"; ctx.fillRect(bx - 2, 3, 124, 11);
+  ctx.fillStyle = "#2a1c1c"; ctx.fillRect(bx, 5, 120, 7);
+  ctx.fillStyle = fr < 0.3 ? "#c4413b" : "#c86a2a"; ctx.fillRect(bx, 5, 120 * fr, 7);
+  ctx.fillStyle = fr < 0.3 ? "#e0453c" : "#e8913a"; ctx.fillRect(bx, 5, 120 * fr, 4);
+  ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(bx, 5, 120 * fr, 1);
+  drawTinyText(VW / 2, 16, `COEUR DU VILLAGE ${Math.max(0, Math.ceil(S_.heart.hp))}`, "#f6efe0");
+  // la barre du Seigneur de la Horde
+  const lord = S_.enemies.find(e => e.type === "seigneur");
+  if (lord) {
+    const fr2 = Math.max(0, lord.hp / lord.max), lx = VW / 2 - 80;
+    ctx.fillStyle = "rgba(10,8,14,0.85)"; ctx.fillRect(lx - 2, 24, 164, 9);
+    ctx.fillStyle = "#3a1018"; ctx.fillRect(lx, 26, 160, 5); ctx.fillStyle = lord.raged ? "#e0453c" : "#a8243a"; ctx.fillRect(lx, 26, 160 * fr2, 5);
+    ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fillRect(lx, 26, 160 * fr2, 1);
+    drawTinyText(VW / 2, 35, "LE SEIGNEUR DE LA HORDE", lord.raged ? "#ff8a80" : "#f2b54a");
+  }
   // vague
   const wtxt = S_.phase === "prep" ? (S_.wave ? `REPIT ${Math.ceil(S_.phaseT)}` : `VAGUE 1 DANS ${Math.ceil(S_.phaseT)}`) : `VAGUE ${S_.wave}  ${S_.enemies.length + S_.toSpawn}`;
   drawTinyText(VW - 4 - wtxt.length * 2, 5, wtxt, "#f2d45a");
   // niveau et expérience
   const need = SG.xpBase + SG.xpGrow * S_.level;
-  ctx.fillStyle = "rgba(10,8,14,0.7)"; ctx.fillRect(0, VH - 4, VW, 4);
-  ctx.fillStyle = "#7fd6c0"; ctx.fillRect(0, VH - 3, VW * Math.min(1, S_.xp / need), 2);
-  drawTinyText(16, VH - 12, `NIV ${S_.level}`, "#7fd6c0");
-  // les PV de chaque joueur
+  ctx.fillStyle = "rgba(10,8,14,0.75)"; ctx.fillRect(0, VH - 4, VW, 4);
+  ctx.fillStyle = "#3a9a88"; ctx.fillRect(0, VH - 3, VW * Math.min(1, S_.xp / need), 2);
+  ctx.fillStyle = "#7fd6c0"; ctx.fillRect(0, VH - 3, VW * Math.min(1, S_.xp / need), 1);
+  drawTinyText(VW - 18, VH - 12, `NIV ${S_.level}`, "#7fd6c0");
+  // les PV de chaque joueur (petits cœurs)
   S_.players.forEach((p, k) => {
     const x = 4, y = 4 + k * 10;
-    for (let i = 0; i < p.s.maxHp; i++) { ctx.fillStyle = i < p.hp ? SG_COLORS[p.i] : "rgba(233,225,207,0.2)"; ctx.fillRect(x + i * 5, y, 4, 4); }
-    if (S_.players.length > 1) drawTinyText(x + p.s.maxHp * 5 + 4 + p.name.slice(0, 8).length * 2, y - 0.5, p.name.slice(0, 8).toUpperCase(), SG_COLORS[p.i]);
+    for (let i = 0; i < p.s.maxHp; i++) {
+      const full = i < p.hp, hx = x + i * 6;
+      ctx.fillStyle = full ? SG_COLORS[p.i] : "rgba(233,225,207,0.18)";
+      ctx.fillRect(hx, y + 1, 5, 2); ctx.fillRect(hx + 1, y, 1, 1); ctx.fillRect(hx + 3, y, 1, 1); ctx.fillRect(hx + 1, y + 3, 3, 1); ctx.fillRect(hx + 2, y + 4, 1, 1);
+      if (full) { ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fillRect(hx + 1, y + 1, 1, 1); }
+    }
+    if (S_.players.length > 1) drawTinyText(x + p.s.maxHp * 6 + 4 + p.name.slice(0, 8).length * 2, y - 0.5, p.name.slice(0, 8).toUpperCase(), SG_COLORS[p.i]);
   });
-  // objets du premier joueur local
-  const me = S_.players.find(p => p.src !== "net") || S_.players[0];
-  me.items.forEach((id, k) => { if (ITEM[id]) drawItemIcon(id, VW - 12 - k * 11, VH - 18); });
+  // les sorts (emplacements) et les objets du joueur local
+  const me = S_.players.find(p => p.pid === S_.myPid) || S_.players.find(p => p.src !== "net") || S_.players[0];
+  const ids = Object.keys(me.spells || {}), slots = me.s.slots || SG.slots;
+  for (let k = 0; k < slots; k++) {
+    const x = 4 + k * 14, y = VH - 20, id = ids[k], L = id ? me.spells[id] : 0;
+    ctx.fillStyle = "rgba(10,8,14,0.75)"; ctx.fillRect(x, y, 13, 13);
+    ctx.strokeStyle = L >= 10 ? "#f2b54a" : L >= 5 ? "#b77ae0" : id ? "rgba(233,225,207,0.5)" : "rgba(233,225,207,0.15)"; ctx.lineWidth = L >= 10 ? 1.34 : 0.67; ctx.strokeRect(x + 0.5, y + 0.5, 12, 12); ctx.lineWidth = 1;
+    if (id) {
+      sgDrawSpellIcon(ctx, id, x + 2.5, y + 1.5, 1);
+      ctx.fillStyle = L >= 10 ? "#f2b54a" : "#e9e1cf"; const t = L >= 10 ? "X" : String(L);
+      drawTinyText(x + 10, y + 7.5, t, L >= 10 ? "#f2b54a" : "#e9e1cf");
+      // recharge
+      const c = me.cd && me.cd[id]; if (c > 0 && id !== "feu" && id !== "lames") { ctx.fillStyle = "rgba(10,8,14,0.45)"; ctx.fillRect(x + 1, y + 1, 11, Math.min(11, c * 6)); }
+    }
+  }
+  me.items.forEach((id, k) => { if (ITEM[id]) { const x = VW - 12 - (k % 12) * 10, y = VH - 30 - Math.floor(k / 12) * 11; ctx.fillStyle = (SG_RARITY[SG_RARITY_OF[id]] || {}).col || "#888"; ctx.globalAlpha = 0.5; ctx.fillRect(x - 1, y - 1, 10, 12); ctx.globalAlpha = 1; drawItemIcon(id, x, y); } });
 }
 
 // ===== Coop en ligne =====
@@ -797,10 +1312,12 @@ function sgHostNet(dt) {
   const r1 = v => Math.round(v * 10) / 10;
   S_.net.send("snap", {
     w: S_.wave, ph: S_.phase, pt: r1(S_.phaseT), hh: Math.ceil(S_.heart.hp), hm: S_.heart.max, hit: S_.heart.hitT > 0 ? 1 : 0, lv: S_.level, xp: S_.xp, k: S_.kills, ts: S_.toSpawn,
-    pl: S_.players.map(p => [p.pid, r1(p.x), r1(p.y), p.hp, p.s.maxHp, p.face, p.down ? 1 : 0, r1(p.aim), p.iv > 0 ? 1 : 0, p.items, p.orbs ? p.orbs.map(o => [r1(o[0]), r1(o[1])]) : 0, p.s.aura, r1(p.reviveT), Math.round(Math.hypot(p.input.mx, p.input.my) * 10)]),
+    pl: S_.players.map(p => [p.pid, r1(p.x), r1(p.y), p.hp, p.s.maxHp, p.face, p.down ? 1 : 0, r1(p.aim), p.iv > 0 ? 1 : 0, p.items, p.orbs ? p.orbs.map(o => [r1(o[0]), r1(o[1]), r1(o[2])]) : 0,
+      [r1(p.fireR || 0), r1(p.frostR || 0)], r1(p.reviveT), Math.round(Math.hypot(p.input.mx, p.input.my) * 10), p.spells, p.s.slots, r1(p.s.speed), r1(p.s.size), p.cd ? Object.fromEntries(Object.entries(p.cd).map(([k, v]) => [k, r1(Math.max(0, v))])) : 0]),
     en: S_.enemies.slice(0, 160).map(e => [e.id, e.type, r1(e.x), r1(e.y), Math.round(100 * e.hp / e.max), e.flash > 0 ? 1 : 0]),
-    sh: S_.shots.slice(0, 120).map(q => [q.owner, q.kind === "boomer" ? 1 : q.kind === "moon" ? 2 : 0, r1(q.x), r1(q.y), r1(q.r)]),
-    fs: S_.foeShots.map(q => [r1(q.x), r1(q.y)]),
+    sh: S_.shots.slice(0, 120).map(q => [q.owner, q.kind === "boomer" ? 1 : q.kind === "moon" ? 2 : q.kind === "wave" ? 3 : q.kind === "shard" ? 4 : 0, r1(q.x), r1(q.y), r1(q.r), r1(q.a || 0)]),
+    zn: S_.zones.slice(0, 40).map(z => [z.kind, r1(z.x), r1(z.y), r1(z.r || 0), r1(z.t), r1(z.dur || 1), r1(z.tx || 0), r1(z.ty || 0)]),
+    fs: S_.foeShots.map(q => [r1(q.x), r1(q.y), q.big ? 1 : 0]),
     gm: S_.gems.slice(0, 80).map(g => [r1(g.x), r1(g.y), g.v]),
     fx: S_.fx.filter(f => f.t > 0.08 && !f.sent).map(f => { f.sent = true; return [f.kind, r1(f.x), r1(f.y), r1(f.a || 0), r1(f.r || 0), f.c || ""]; }),
   });
@@ -809,13 +1326,23 @@ function sgGuestUpdate(dt) {
   const S_ = siege, me = S_.players.find(p => p.pid === S_.myPid);
   if (me) {
     me.input = sgReadInput({ ...me, src: "auto" });
+    // mon héros bouge tout de suite chez moi (sans attendre l'hôte) : j'envoie ma position avec mes commandes
+    if (!me.down) {
+      const I = me.input, sp = SG.speed * (me.s.speed || 1), acc = SG.accel * dt, app = (v, t) => v < t ? Math.min(t, v + acc) : Math.max(t, v - acc);
+      me.vx = app(me.vx || 0, I.mx * sp); me.vy = app(me.vy || 0, I.my * sp);
+      sgMove(S_.map, me, me.vx * dt, me.vy * dt, false);
+      me.anim += Math.hypot(I.mx, I.my) * dt * 8;
+      if (Math.abs(I.mx) > 0.1) me.face = Math.sign(I.mx);
+      if (I.aim) me.aim = Math.atan2(I.ay, I.ax); else if (Math.hypot(I.mx, I.my) > 0.2 && !sgAutoAim()) me.aim = Math.atan2(I.my, I.mx);
+    }
     // l'aide à la visée et le tir auto se règlent chez l'invité : on les envoie avec les commandes
     S_.inT = (S_.inT || 0) - dt;
-    if (S_.inT <= 0) { S_.inT = 1 / SG.inHz; const I = me.input; S_.net.send("in", { pid: S_.myPid, mx: I.mx, my: I.my, ax: I.ax, ay: I.ay, fire: I.fire, aim: I.aim, af: sgAutoFire(), aa: sgAutoAim() }); }
+    if (S_.inT <= 0) { S_.inT = 1 / SG.inHz; const I = me.input; S_.net.send("in", { pid: S_.myPid, mx: I.mx, my: I.my, ax: I.ax, ay: I.ay, fire: I.fire, aim: I.aim, af: sgAutoFire(), aa: sgAutoAim(), x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10 }); }
   }
-  // positions lissées vers le dernier état reçu
+  // positions lissées vers le dernier état reçu (sauf mon héros, que je déplace moi-même)
   const k = Math.min(1, dt * 14);
-  for (const p of S_.players) if (p.tx != null) { p.x += (p.tx - p.x) * k; p.y += (p.ty - p.y) * k; }
+  for (const p of S_.players) if (p.tx != null && p !== me) { p.x += (p.tx - p.x) * k; p.y += (p.ty - p.y) * k; }
+  for (const z of S_.zones) z.t -= dt;
   for (const e of S_.enemies) if (e.tx != null) { e.x += (e.tx - e.x) * k; e.y += (e.ty - e.y) * k; e.t += dt; }
   for (const f of S_.fx) f.t -= dt; S_.fx = S_.fx.filter(f => f.t > 0);
   sgCamera(dt);
@@ -829,16 +1356,22 @@ function sgApplySnap(m) {
   for (const a of m.pl) {
     let p = S_.players.find(q => q.pid === a[0]);
     if (!p) { p = sgMakePlayer(S_.players.length, "net", "?", a[0]); S_.players.push(p); }
-    if (p.tx == null) { p.x = a[1]; p.y = a[2]; }
-    p.tx = a[1]; p.ty = a[2]; p.hp = a[3]; p.s.maxHp = a[4]; p.face = a[5]; p.down = !!a[6]; p.aim = a[7]; p.iv = a[8] ? 0.1 : 0; p.items = a[9] || [];
-    p.orbs = a[10] || null; p.s.aura = a[11]; p.reviveT = a[12]; p.input = { mx: a[13] / 10, my: 0 }; p.anim += a[13] / 10 * 0.13;
+    const mine = p.pid === S_.myPid;
+    // mon héros : je garde ma position, sauf si l'hôte me voit vraiment ailleurs (relevé, coincé…)
+    if (p.tx == null || (mine && (Math.hypot(p.x - a[1], p.y - a[2]) > 48 || a[6]))) { p.x = a[1]; p.y = a[2]; }
+    p.tx = a[1]; p.ty = a[2]; p.hp = a[3]; p.s.maxHp = a[4]; p.down = !!a[6]; p.iv = a[8] ? 0.1 : 0; p.items = a[9] || [];
+    if (!mine) { p.face = a[5]; p.aim = a[7]; p.input = { mx: a[13] / 10, my: 0 }; p.anim += a[13] / 10 * 0.13; } else if (sgAutoAim()) p.aim = a[7];
+    p.orbs = a[10] || null; p.fireR = (a[11] && a[11][0]) || 0; p.frostR = (a[11] && a[11][1]) || 0; p.reviveT = a[12];
+    if (a[14]) p.spells = a[14]; if (a[15]) p.s.slots = a[15]; if (a[16]) p.s.speed = a[16]; if (a[17]) p.s.size = a[17]; if (a[18]) p.cd = a[18];
   }
   const seen = new Map(S_.enemies.map(e => [e.id, e]));
-  S_.enemies = m.en.map(a => { let e = seen.get(a[0]); if (!e) e = { id: a[0], type: a[1], x: a[2], y: a[3], t: Math.random() * 6, r: SG_ENEMIES[a[1]].r * (SG_ENEMIES[a[1]].scale || 1) }; e.tx = a[2]; e.ty = a[3]; e.hp = a[4]; e.max = 100; e.flash = a[5] ? 0.1 : 0; return e; });
-  S_.shots = m.sh.map(a => ({ owner: a[0], kind: a[1] === 1 ? "boomer" : a[1] === 2 ? "moon" : "bolt", x: a[2], y: a[3], r: a[4], age: time }));
-  S_.foeShots = m.fs.map(a => ({ x: a[0], y: a[1] }));
+  S_.enemies = m.en.map(a => { let e = seen.get(a[0]); if (!e) e = { id: a[0], type: a[1], x: a[2], y: a[3], t: Math.random() * 6, r: SG_ENEMIES[a[1]].r * (SG_ENEMIES[a[1]].scale || 1) }; e.tx = a[2]; e.ty = a[3]; e.hp = a[4]; e.max = 100; e.flash = a[5] ? 0.1 : 0; if (a[1] === "seigneur") e.raged = a[4] < 50; return e; });
+  S_.shots = m.sh.map(a => ({ owner: a[0], kind: ["bolt", "boomer", "moon", "wave", "shard"][a[1]] || "bolt", x: a[2], y: a[3], r: a[4], a: a[5], age: time }));
+  S_.zones = (m.zn || []).map(z => ({ kind: z[0], x: z[1], y: z[2], r: z[3], t: z[4], dur: z[5], tx: z[6], ty: z[7] }));
+  S_.foeShots = m.fs.map(a => ({ x: a[0], y: a[1], big: !!a[2] }));
   S_.gems = m.gm.map(a => ({ x: a[0], y: a[1], v: a[2], t: 0 }));
-  for (const f of m.fx) S_.fx.push({ kind: f[0], x: f[1], y: f[2], a: f[3], r: f[4], c: f[5], t: f[0] === "slash" ? 0.14 : 0.3 });
+  const FXT = { slash: 0.14, beam: 0.22, zap: 0.16, nova: 0.35, boom: 0.4, star: 0.35 };
+  for (const f of m.fx) S_.fx.push({ kind: f[0], x: f[1], y: f[2], a: f[3], r: f[4], c: f[5], t: FXT[f[0]] || 0.3 });
 }
 // Le salon : l'hôte crée, les autres rejoignent avec le code, l'hôte lance
 async function sgLobby(code, asHost) {
@@ -853,14 +1386,14 @@ async function sgLobby(code, asHost) {
   renderSiegeLobby();
   try {
     L.net = await PVP_NET.join(`siege:${code}`, {
-      key: me.pid, events: ["start", "in", "snap", "offer", "pick", "picked", "end", "bye"],
+      key: me.pid, events: ["start", "in", "snap", "offer", "pick", "picked", "end", "bye", "cont"],
       onSync: ms => { L.members = ms.sort((a, b) => a.at - b.at).slice(0, 4); if (!siege) renderSiegeLobby(); },   // en partie, on ne redessine pas le salon par-dessus un choix
       onMsg: (ev, m) => sgOnNet(ev, m),
     });
     await L.net.track({ pid: me.pid, name: me.pseudo, host: asHost, at: Date.now() });
   } catch (e) { toast("Connexion impossible.", 2400); sgLobbyState = null; renderSiegeLobby(); }
 }
-let sgLobbyState = null;
+let sgLobbyState = null, sgOptFrom = null;
 function sgOnNet(ev, m) {
   const L = sgLobbyState;
   if (ev === "start" && L && !L.host && !siege) {
@@ -871,7 +1404,9 @@ function sgOnNet(ev, m) {
   }
   if (!siege) return;
   if (ev === "snap") sgApplySnap(m);
-  if (ev === "in" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.input = { mx: +m.mx || 0, my: +m.my || 0, ax: +m.ax || 0, ay: +m.ay || 0, fire: !!m.fire, aim: !!m.aim, idle: !m.af && !m.fire && !m.mx && !m.my && m.aa === false && m.af === false }; p.autoFire = !!m.af; p.autoAim = !!m.aa; } }
+  if (ev === "in" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.input = { mx: +m.mx || 0, my: +m.my || 0, ax: +m.ax || 0, ay: +m.ay || 0, fire: !!m.fire, aim: !!m.aim, idle: !m.af && !m.fire && !m.mx && !m.my && m.aa === false && m.af === false };
+      // la position de l'invité : il se déplace chez lui ; on la prend si elle est plausible (et libre)
+      if (m.x != null && !p.down) { p.netPos = true; const nx = +m.x, ny = +m.y; if (Math.hypot(nx - p.x, ny - p.y) < 60 && !sgSolid(siege.map, Math.floor(nx / T), Math.floor(ny / T), false)) { p.x = nx; p.y = ny; } } p.autoFire = !!m.af; p.autoAim = !!m.aa; } }
   if (ev === "offer" && !siege.host && m.to === siege.myPid && !siege.over) {
     siege.answered = siege.answered || {};
     // déjà répondu (la réponse s'est perdue) : on la renvoie ; déjà à l'écran : rien à faire
@@ -887,6 +1422,7 @@ function sgOnNet(ev, m) {
     if (siege.curOffer === m.id) { siege.curOffer = null; siege.pickDone = null; toast("Temps écoulé : choix automatique.", 1800); sgResume(); }
   }
   if (ev === "pick" && siege.host) sgRemotePick(m.pid, m.opt, m.id);
+  if (ev === "cont" && !siege.host) { siege.over = null; siege.endless = true; sgResume(); toast("Mode infini : la horde ne s'arrête plus.", 2600, true); }
   if (ev === "end" && !siege.host && !siege.over) { siege.over = m; siege.pickDone = null; siege.curOffer = null; sgShowEnd(); }
   if (ev === "bye" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.down = true; p.hp = 0; p.left = true; toast(`${p.name} a quitté la partie.`, 2000); } }
 }
@@ -909,7 +1445,7 @@ function sgShowPause() {
   const el = document.getElementById("siegePanel");
   el.innerHTML = `<div><span class="kicker">Siège · vague ${siege.wave}</span><div class="big small">Pause</div></div>
     ${siege.net ? `<p class="pvp-help">En ligne, la partie continue pendant la pause.</p>` : ""}
-    <nav class="menu-list"><button class="mi" data-act="sgResume">Reprendre</button>${sgOptButtons()}<button class="mi" data-act="sgQuit">Abandonner</button></nav>`;
+    <nav class="menu-list"><button class="mi" data-act="sgResume">Reprendre</button>${sgOptButtons()}<button class="mi" data-act="sgOptions">Options<small>son, commandes, affichage</small></button><button class="mi" data-act="sgQuit">Abandonner</button></nav>`;
   showPanel("siege");
 }
 function renderSiegeLobby() {
@@ -935,6 +1471,7 @@ function renderSiegeLobby() {
         <div class="sync-link"><input id="sgRoomInput" type="text" maxlength="11" autocomplete="off" spellcheck="false" placeholder="SIEGE-XXXX" aria-label="Code d'un salon"></div>
         <button class="mi" data-act="sgJoin">Rejoindre un salon</button>
         ${sgOptButtons()}
+        <button class="mi" data-act="sgOptions">Options<small>son, commandes, affichage</small></button>
         <button class="mi" data-act="back">Retour</button>
       </nav>`;
     pvpBindInputs(el);
@@ -999,6 +1536,16 @@ function renderSiegeLobby() {
       return;
     }
     if (act && act.startsWith("sgPick:") && siege && siege.pickDone) { const f = siege.pickDone; siege.pickDone = null; f(act.slice(7)); return; }
+    if (act === "sgContinue") { sgContinue(); return; }
+    // les Options du jeu, depuis le Siège : « Retour » ramène au Siège (pause ou menu du mode)
+    if (act === "sgOptions") { sgOptFrom = { root: menuRoot }; menuRoot = "siege"; syncOptions(); showPanel("options"); return; }
+    if (act === "back" && sgOptFrom && (menuPanel === "options" || menuPanel === "keys")) {
+      if (menuPanel === "keys") { showPanel("options"); return; }
+      menuRoot = sgOptFrom.root; sgOptFrom = null;
+      showPanel("siege"); menuPanel = "siege";
+      if (siege && !siege.over && !siege.choice && !siege.pickDone) sgShowPause(); else if (!siege) renderSiegeLobby();
+      return;
+    }
     if (act === "sgResume") { if (siege) { siege.paused = false; sgResume(); } return; }
     if (act === "sgQuit") {
       if (siege && siege.net) { try {
