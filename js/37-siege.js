@@ -16,7 +16,8 @@ const SG = {
   heartHp: 100, breakTime: 9, firstWave: 3,          // PV du Cœur, durée du répit, attente avant la 1re vague
   playerHp: 6, speed: 92, accel: 1100, iframes: 1.0, revive: 2.5, slots: 6,   // vitesse, accélération (px/s²), emplacements de sorts
   xpBase: 6, xpGrow: 5,                              // expérience du niveau n : xpBase + xpGrow × n
-  finalWave: 25, stormEvery: 1.25,                                     // la vague du boss final (le Seigneur de la Horde)
+  finalWave: 25, stormEvery: 1.25,
+  lateWave: 15, lateHp: 0.12, lateCount: 0.06,      // à partir de la vague 15 : +12 % de PV et +6 % de monstres par vague en plus                                     // la vague du boss final (le Seigneur de la Horde)
   coopCount: 0.6, coopHp: 0.3, lvCount: 0.03,        // par joueur en plus : +60 % de monstres, +30 % de PV ; +3 % de monstres par niveau d'équipe
   sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
@@ -303,7 +304,8 @@ function sgStartWave() {
   const n = S_.players.length, lord = S_.wave === SG.finalWave || (S_.endless && S_.wave > SG.finalWave && S_.wave % 10 === 0);
   const boss = !lord && S_.wave % 5 === 0;
   // plus de monstres avec plus de joueurs, et à mesure que l'équipe monte de niveau
-  S_.toSpawn = Math.round((6 + S_.wave * 4.5) * (1 + SG.coopCount * (n - 1)) * (1 + SG.lvCount * (S_.level - 1)) * (lord ? 0.6 : 1));
+  const late = Math.max(0, S_.wave - SG.lateWave + 1);
+  S_.toSpawn = Math.round((6 + S_.wave * 4.5) * (1 + SG.coopCount * (n - 1)) * (1 + SG.lvCount * (S_.level - 1)) * (1 + SG.lateCount * late) * (lord ? 0.6 : 1));
   S_.spawnT = 0.5; S_.bossLeft = boss ? 1 : 0;
   if (lord) { sgSpawn("seigneur"); S_.lordUp = true; }
   toast(lord ? `<b>Vague ${S_.wave}</b> · LE SEIGNEUR DE LA HORDE ARRIVE !` : boss ? `<b>Vague ${S_.wave}</b> · un Bélier approche des portes !` : `<b>Vague ${S_.wave}</b>`, lord ? 3600 : 2400, true);
@@ -342,7 +344,7 @@ function sgSpawn(force) {
     y = Math.max(2 * T, Math.min((m.H - 3) * T, h.y + Math.sin(an) * rd * 0.75));
     if (!sgSolid(m, Math.floor(x / T), Math.floor(y / T), d.fly) && Math.hypot(x - h.x, (y - h.y) * 1.15) > SG.ringR * T + 30) break;
   }
-  const n = S_.players.length, mult = (1 + 0.16 * (w - 1)) * (1 + SG.coopHp * (n - 1)) * (d.boss ? 1 + 0.5 * (n - 1) : 1) * (d.lord && S_.endless ? 1 + 0.5 * Math.floor((w - SG.finalWave) / 10) : 1);
+  const n = S_.players.length, late = d.lord ? 0 : Math.max(0, w - SG.lateWave + 1), mult = (1 + 0.16 * (w - 1)) * (1 + SG.lateHp * late) * (1 + SG.coopHp * (n - 1)) * (d.boss ? 1 + 0.5 * (n - 1) : 1) * (d.lord && S_.endless ? 1 + 0.5 * Math.floor((w - SG.finalWave) / 10) : 1);
   const e = { id: S_.nextId++, type, x, y, r: d.r * (d.scale || 1), hp: d.hp * mult, max: d.hp * mult, spd: d.spd * (1 + Math.min(0.5, w * 0.02)) * (0.9 + S_.rand() * 0.2),
     cd: 0, flash: 0, burn: 0, poison: 0, stuck: 0, lx: x, ly: y, t: S_.rand() * 6, kb: { x: 0, y: 0 }, hit: {} };
   S_.enemies.push(e); if (!force) S_.toSpawn--;
