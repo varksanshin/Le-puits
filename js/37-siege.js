@@ -19,6 +19,7 @@ const SG = {
   finalWave: 25, stormEvery: 1.25,
   lateWave: 15, lateHp: 0.12, lateCount: 0.06,      // à partir de la vague 15 : +12 % de PV et +6 % de monstres par vague en plus                                     // la vague du boss final (le Seigneur de la Horde)
   coopCount: 0.6, coopHp: 0.3, lvCount: 0.03,        // par joueur en plus : +60 % de monstres, +30 % de PV ; +3 % de monstres par niveau d'équipe
+  netV: 4,                                           // version du protocole en ligne : tous les joueurs d'un salon doivent avoir la même
   sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
 const SG_ENEMIES = {
@@ -1443,12 +1444,13 @@ async function sgLobby(code, asHost) {
       onSync: ms => { L.members = ms.sort((a, b) => a.at - b.at).slice(0, 4); if (!siege) renderSiegeLobby(); },   // en partie, on ne redessine pas le salon par-dessus un choix
       onMsg: (ev, m) => sgOnNet(ev, m),
     });
-    await L.net.track({ pid: me.pid, name: me.pseudo, host: asHost, at: Date.now() });
+    await L.net.track({ pid: me.pid, name: me.pseudo, host: asHost, at: Date.now(), v: SG.netV });
   } catch (e) { toast("Connexion impossible.", 2400); sgLobbyState = null; renderSiegeLobby(); }
 }
 let sgLobbyState = null, sgOptFrom = null;
 function sgOnNet(ev, m) {
   const L = sgLobbyState;
+  if (ev === "start" && L && !L.host && !siege && m.v !== SG.netV) { toast("L'hôte n'a pas la même version du jeu : rechargez tous la page.", 4000, true); return; }
   if (ev === "start" && L && !L.host && !siege) {
     siegeStart({ seed: m.seed, host: false, net: L.net, players: m.players.map(p => ({ src: "net", name: p.name, pid: p.pid })) });
     siege.myPid = L.me.pid; siege.lastRx = Date.now();
@@ -1482,9 +1484,13 @@ function sgOnNet(ev, m) {
 function sgHostStart() {
   const L = sgLobbyState; if (!L || !L.host) return;
   const seed = Math.floor(Math.random() * 1e9);
-  const others = L.members.filter(m => m.pid !== L.me.pid).slice(0, 3);
+  // un joueur dont le jeu n'est pas à jour casserait la partie de tout le monde : il reste dehors
+  const stale = L.members.filter(m => m.pid !== L.me.pid && m.v !== SG.netV);
+  if (stale.length) toast(`${stale.map(m => m.name).join(", ")} : jeu pas à jour. Il doit recharger la page (puis revenir dans le salon).`, 4200, true);
+  const others = L.members.filter(m => m.pid !== L.me.pid && m.v === SG.netV).slice(0, 3);
+  if (L.members.some(m => m.pid !== L.me.pid) && !others.length) return;
   const players = [{ src: "auto", name: L.me.pseudo, pid: L.me.pid }, ...others.map(m => ({ src: "net", name: m.name, pid: m.pid }))];
-  L.net.send("start", { seed, players: players.map(p => ({ name: p.name, pid: p.pid })) });
+  L.net.send("start", { seed, v: SG.netV, players: players.map(p => ({ name: p.name, pid: p.pid })) });
   siegeStart({ seed, host: true, net: L.net, players });
 }
 // les deux options de combat : chaque joueur règle les siennes (aussi en ligne et pendant la pause)
@@ -1508,7 +1514,8 @@ function renderSiegeLobby() {
   if (L) {
     el.innerHTML = `<div><span class="kicker">Siège · coop en ligne</span><div class="big small">Salon ${L.code}</div></div>
       <p class="pvp-help">${L.host ? "Donne ce code à tes amis (jusqu'à 3). Lance quand tout le monde est là." : "En attente du lancement par l'hôte…"}</p>
-      <p class="pvp-picks">${L.members.map((m, i) => `<span class="pvp-chip" style="color:${SG_COLORS[i]}">${m.name}${m.host ? " (hôte)" : ""}</span>`).join("") || `<span class="pvp-chip empty">connexion…</span>`}</p>
+      <p class="pvp-picks">${L.members.map((m, i) => `<span class="pvp-chip" style="color:${m.v === SG.netV ? SG_COLORS[i] : "#e0453c"}">${m.name}${m.host ? " (hôte)" : ""}${m.v === SG.netV ? "" : " · pas à jour"}</span>`).join("") || `<span class="pvp-chip empty">connexion…</span>`}</p>
+      ${L.members.some(m => m.v !== SG.netV) ? `<p class="pvp-status">${L.members.some(m => m.v !== SG.netV && m.host) && !L.host ? "Ton jeu et celui de l'hôte n'ont pas la même version." : "Un joueur n'a pas la dernière version du jeu."} Rechargez la page (sur téléphone : fermer l'onglet et le rouvrir), puis revenez dans le salon.</p>` : ""}
       <nav class="menu-list">${L.host ? `<button class="mi" data-act="sgHostStart">Lancer la partie<small>${L.members.length} joueur${L.members.length > 1 ? "s" : ""}</small></button>` : ""}
         ${sgOptButtons()}
         <button class="mi" data-act="sgLeave">Quitter le salon</button></nav>`;
