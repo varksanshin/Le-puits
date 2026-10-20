@@ -16,7 +16,7 @@ const SG = {
   heartHp: 100, breakTime: 9, firstWave: 3,          // PV du Cœur, durée du répit, attente avant la 1re vague
   playerHp: 6, speed: 82, iframes: 1.0, revive: 2.5,
   xpBase: 6, xpGrow: 5,                              // expérience du niveau n : xpBase + xpGrow × n
-  sendHz: 15, inHz: 20,
+  sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
 const SG_ENEMIES = {
   crawler:   { hp: 12, spd: 30, r: 6, dmg: 1, heart: 2, xp: 1, sprite: "crawler", from: 1 },
@@ -157,7 +157,7 @@ function siegeStart(o = {}) {
 function siegeStop() {
   if (siege && siege.net) { try { siege.net.leave(); } catch (e) {} }
   siege = null;
-  document.body.classList.remove("siege-on");
+  document.body.classList.remove("siege-on", "pvp-drafting");
   openTitle();
 }
 
@@ -200,9 +200,10 @@ function siegeUpdate(dt) {
   const S_ = siege;
   if (!S_ || S_.over) return;
   if (!S_.host) { sgGuestUpdate(dt); return; }
-  if (S_.paused || S_.choice) return;
+  if (S_.choice) { sgChoiceTick(dt); if (S_.net) sgHostNet(dt); return; }
+  if (S_.paused) { if (S_.net) sgHostNet(dt); return; }
   S_.time += dt;
-  for (const p of S_.local) if (p.src !== "bot") p.input = sgReadInput(p);
+  for (const p of S_.local) if (p.src !== "bot") p.input = screen === "play" ? sgReadInput(p) : { mx: 0, my: 0, ax: 0, ay: 0, fire: false, aim: false, idle: true };
   // la vague
   S_.phaseT -= dt;
   if (S_.phase === "prep" && S_.phaseT <= 0) sgStartWave();
@@ -412,7 +413,7 @@ function sgUpdatePlayer(p, dt) {
   if (auto) { target = sgNearest(p, 170); if (target) p.aim = Math.atan2(target.y - p.y, target.x - p.x); else if (Math.hypot(I.mx, I.my) > 0.2) p.aim = Math.atan2(I.my, I.mx); }
   else p.aim = Math.atan2(I.ay, I.ax);
   if (Math.abs(Math.cos(p.aim)) > 0.2) p.face = Math.sign(Math.cos(p.aim));
-  const fire = (p.src === "net" ? p.autoFire : sgAutoFire()) ? !!(target || sgNearest(p, 150)) : I.fire;
+  const fire = I.idle ? false : (p.src === "net" ? p.autoFire : sgAutoFire()) ? !!(target || sgNearest(p, 150)) : I.fire;
   const ux = Math.cos(p.aim), uy = Math.sin(p.aim);
   for (const k in p.cd) p.cd[k] -= dt * s.rate;
   // l'épée : un arc devant soi
@@ -572,9 +573,28 @@ function sgApply(p, opt) {
 // chaque joueur choisit : les joueurs locaux l'un après l'autre, les joueurs en ligne en même temps
 function sgOfferChoice(kind) {
   const S_ = siege;
-  S_.choice = { kind, queue: S_.players.filter(p => p.src !== "net" && !(kind === "item" && p.down)).map(p => p.i), remote: {}, t: 25 };
-  for (const p of S_.players) if (p.src === "net") { const opts = sgOptionsFor(p, kind); S_.choice.remote[p.pid] = opts; S_.net && S_.net.send("offer", { to: p.pid, kind, opts, level: S_.level, wave: S_.wave }); }
+  S_.offerN = (S_.offerN || 0) + 1;
+  S_.choice = { id: S_.offerN, kind, queue: S_.players.filter(p => p.src !== "net" && !(kind === "item" && p.down)).map(p => p.i), remote: {}, t: SG.pickWait, resend: 2 };
+  for (const p of S_.players) if (p.src === "net" && !p.left) S_.choice.remote[p.pid] = sgOptionsFor(p, kind);
+  sgSendOffers();
   sgNextLocalChoice();
+}
+// en ligne, un message peut se perdre : l'hôte renvoie la proposition toutes les 2 s ;
+// au bout de SG.pickWait secondes (ou si le joueur est parti), il choisit à sa place pour ne bloquer personne
+function sgSendOffers() {
+  const S_ = siege, c = S_.choice; if (!c || !S_.net) return;
+  for (const pid in c.remote) S_.net.send("offer", { id: c.id, to: pid, kind: c.kind, opts: c.remote[pid], level: S_.level, wave: S_.wave, t: Math.ceil(c.t) });
+}
+function sgChoiceTick(dt) {
+  const S_ = siege, c = S_.choice; if (!c || !Object.keys(c.remote).length) return;
+  c.t -= dt; c.resend -= dt;
+  if (c.resend <= 0) { c.resend = 2; sgSendOffers(); }
+  for (const pid of Object.keys(c.remote)) {
+    const p = S_.players.find(q => q.pid === pid);
+    if (!p || p.left || c.t <= 0) { if (p && !p.left) { sgApply(p, c.remote[pid][0].id); toast(`${p.name} n'a pas répondu : choix automatique.`, 2000); S_.net && S_.net.send("picked", { to: pid, id: c.id }); } delete c.remote[pid]; }
+  }
+  if (!c.queue.length && !Object.keys(c.remote).length) { S_.choice = null; sgResume(); }
+  else if (!c.queue.length && screen === "siegemenu" && document.getElementById("sgWaitT")) document.getElementById("sgWaitT").textContent = Math.max(0, Math.ceil(c.t));
 }
 function sgNextLocalChoice() {
   const S_ = siege, c = S_.choice;
@@ -587,11 +607,12 @@ function sgNextLocalChoice() {
   c.cur = p; c.opts = sgOptionsFor(p, c.kind);
   sgShowChoice(p, c.kind, c.opts, opt => { sgApply(p, opt); c.queue.shift(); sgNextLocalChoice(); });
 }
-function sgRemotePick(pid, opt) {
-  const S_ = siege, c = S_.choice; if (!c || !c.remote[pid]) return;
+function sgRemotePick(pid, opt, id) {
+  const S_ = siege, c = S_.choice; if (!c || !c.remote[pid] || (id != null && id !== c.id)) return;
   const p = S_.players.find(q => q.pid === pid); if (!p) return;
   if (c.remote[pid].some(o => o.id === opt)) sgApply(p, opt);
   delete c.remote[pid];
+  if (S_.net) S_.net.send("picked", { to: pid, id: c.id });
   if (!c.queue.length && !Object.keys(c.remote).length) { S_.choice = null; sgResume(); }
 }
 function sgResume() { menuEl.hidden = true; screen = "play"; document.body.classList.remove("pvp-drafting"); try { cv.focus({ preventScroll: true }); } catch (e) {} }
@@ -612,7 +633,8 @@ function sgShowChoice(p, kind, opts, done) {
 function sgShowWait() {
   const el = document.getElementById("siegePanel");
   screen = "siegemenu"; menuRoot = "siege";
-  el.innerHTML = `<div><span class="kicker">Siège</span><div class="big small">On attend tes alliés…</div></div><p class="pvp-help">Ils choisissent leur ${siege.choice.kind === "item" ? "objet" : "amélioration"}.</p>`;
+  el.innerHTML = `<div><span class="kicker">Siège</span><div class="big small">On attend tes alliés…</div></div><p class="pvp-help">Ils choisissent leur ${siege.choice.kind === "item" ? "objet" : "amélioration"}. Choix automatique dans <b id="sgWaitT">${Math.ceil(siege.choice.t)}</b> s.</p>
+    <nav class="menu-list"><button class="mi" data-act="sgQuit">Abandonner la partie</button></nav>`;
   showPanel("siege");
 }
 function sgShowEnd() {
@@ -799,7 +821,13 @@ function sgApplySnap(m) {
 }
 // Le salon : l'hôte crée, les autres rejoignent avec le code, l'hôte lance
 async function sgLobby(code, asHost) {
-  if (!PVP.me && !pvpPseudo) { toast("Choisis d'abord un pseudo dans « Duel en ligne ».", 2600); return; }
+  // pas besoin de passer par le Duel : on retrouve le pseudo du compte, sinon on prend celui tapé ici
+  if (!PVP.me) await pvpProfile().catch(() => null);
+  if (!PVP.me && !pvpPseudo) {
+    const inp = document.getElementById("sgNameInput"), v = inp ? inp.value.trim() : "";
+    if (!v) { toast("Écris ton pseudo pour jouer en ligne.", 2400); if (inp) inp.focus(); return; }
+    if (!(await pvpSetPseudo(v))) return;
+  }
   await cloudEnsure().catch(() => {});
   const me = PVP.me || { pid: "g-" + pvpId(8), pseudo: pvpPseudo || "Joueur" };
   if (!me.pid) me.pid = "g-" + pvpId(8);
@@ -808,8 +836,8 @@ async function sgLobby(code, asHost) {
   renderSiegeLobby();
   try {
     L.net = await PVP_NET.join(`siege:${code}`, {
-      key: me.pid, events: ["start", "in", "snap", "offer", "pick", "end", "bye"],
-      onSync: ms => { L.members = ms.sort((a, b) => a.at - b.at).slice(0, 4); renderSiegeLobby(); },
+      key: me.pid, events: ["start", "in", "snap", "offer", "pick", "picked", "end", "bye"],
+      onSync: ms => { L.members = ms.sort((a, b) => a.at - b.at).slice(0, 4); if (!siege) renderSiegeLobby(); },   // en partie, on ne redessine pas le salon par-dessus un choix
       onMsg: (ev, m) => sgOnNet(ev, m),
     });
     await L.net.track({ pid: me.pid, name: me.pseudo, host: asHost, at: Date.now() });
@@ -826,14 +854,23 @@ function sgOnNet(ev, m) {
   }
   if (!siege) return;
   if (ev === "snap") sgApplySnap(m);
-  if (ev === "in" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.input = { mx: +m.mx || 0, my: +m.my || 0, ax: +m.ax || 0, ay: +m.ay || 0, fire: !!m.fire, aim: !!m.aim }; p.autoFire = !!m.af; p.autoAim = !!m.aa; } }
-  if (ev === "offer" && !siege.host && m.to === siege.myPid) {
-    siege.level = m.level; siege.wave = m.wave;
+  if (ev === "in" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.input = { mx: +m.mx || 0, my: +m.my || 0, ax: +m.ax || 0, ay: +m.ay || 0, fire: !!m.fire, aim: !!m.aim, idle: !m.af && !m.fire && !m.mx && !m.my && m.aa === false && m.af === false }; p.autoFire = !!m.af; p.autoAim = !!m.aa; } }
+  if (ev === "offer" && !siege.host && m.to === siege.myPid && !siege.over) {
+    siege.answered = siege.answered || {};
+    // déjà répondu (la réponse s'est perdue) : on la renvoie ; déjà à l'écran : rien à faire
+    if (siege.answered[m.id]) { siege.net.send("pick", { pid: siege.myPid, id: m.id, opt: siege.answered[m.id] }); return; }
+    if (siege.curOffer === m.id) return;
+    siege.curOffer = m.id; siege.level = m.level; siege.wave = m.wave;
     const me = siege.players.find(p => p.pid === siege.myPid) || { i: 0, name: "Toi", items: [] };
-    sgShowChoice(me, m.kind, m.opts, opt => { siege.net.send("pick", { pid: siege.myPid, opt }); sgResume(); });
+    sgShowChoice(me, m.kind, m.opts, opt => { siege.answered[m.id] = opt; siege.curOffer = null; siege.net.send("pick", { pid: siege.myPid, id: m.id, opt }); sgResume(); });
   }
-  if (ev === "pick" && siege.host) sgRemotePick(m.pid, m.opt);
-  if (ev === "end" && !siege.host) { siege.over = m; sgShowEnd(); }
+  // l'hôte a tranché (réponse reçue, ou choix automatique) : on ferme la carte si elle est encore ouverte
+  if (ev === "picked" && !siege.host && m.to === siege.myPid) {
+    siege.answered = siege.answered || {}; siege.answered[m.id] = siege.answered[m.id] || "auto";
+    if (siege.curOffer === m.id) { siege.curOffer = null; siege.pickDone = null; toast("Temps écoulé : choix automatique.", 1800); sgResume(); }
+  }
+  if (ev === "pick" && siege.host) sgRemotePick(m.pid, m.opt, m.id);
+  if (ev === "end" && !siege.host && !siege.over) { siege.over = m; siege.pickDone = null; siege.curOffer = null; sgShowEnd(); }
   if (ev === "bye" && siege.host) { const p = siege.players.find(q => q.pid === m.pid); if (p) { p.down = true; p.hp = 0; p.left = true; toast(`${p.name} a quitté la partie.`, 2000); } }
 }
 function sgHostStart() {
@@ -844,6 +881,20 @@ function sgHostStart() {
   L.net.send("start", { seed, players: players.map(p => ({ name: p.name, pid: p.pid })) });
   siegeStart({ seed, host: true, net: L.net, players });
 }
+// les deux options de combat : chaque joueur règle les siennes (aussi en ligne et pendant la pause)
+function sgOptButtons() {
+  const onoff = v => v ? "Activée" : "Coupée";
+  return `<button class="mi" data-act="sgAutoFire">Attaque auto : ${onoff(sgAutoFire())}<small>les armes frappent seules</small></button>
+        <button class="mi" data-act="sgAutoAim">Visée auto : ${onoff(sgAutoAim())}<small>vise l'ennemi le plus proche (sinon : souris ou stick droit)</small></button>`;
+}
+function sgShowPause() {
+  screen = "siegemenu"; menuRoot = "siege";
+  const el = document.getElementById("siegePanel");
+  el.innerHTML = `<div><span class="kicker">Siège · vague ${siege.wave}</span><div class="big small">Pause</div></div>
+    ${siege.net ? `<p class="pvp-help">En ligne, la partie continue pendant la pause.</p>` : ""}
+    <nav class="menu-list"><button class="mi" data-act="sgResume">Reprendre</button>${sgOptButtons()}<button class="mi" data-act="sgQuit">Abandonner</button></nav>`;
+  showPanel("siege");
+}
 function renderSiegeLobby() {
   const el = document.getElementById("siegePanel"); if (!el) return;
   const L = sgLobbyState, best = (() => { try { return +localStorage.getItem("lepuits.siege.best") || 0; } catch (e) { return 0; } })();
@@ -852,7 +903,9 @@ function renderSiegeLobby() {
     el.innerHTML = `<div><span class="kicker">Siège · coop en ligne</span><div class="big small">Salon ${L.code}</div></div>
       <p class="pvp-help">${L.host ? "Donne ce code à tes amis (jusqu'à 3). Lance quand tout le monde est là." : "En attente du lancement par l'hôte…"}</p>
       <p class="pvp-picks">${L.members.map((m, i) => `<span class="pvp-chip" style="color:${SG_COLORS[i]}">${m.name}${m.host ? " (hôte)" : ""}</span>`).join("") || `<span class="pvp-chip empty">connexion…</span>`}</p>
-      <nav class="menu-list">${L.host ? `<button class="mi" data-act="sgHostStart">Lancer la partie<small>${L.members.length} joueur${L.members.length > 1 ? "s" : ""}</small></button>` : ""}<button class="mi" data-act="sgLeave">Quitter le salon</button></nav>`;
+      <nav class="menu-list">${L.host ? `<button class="mi" data-act="sgHostStart">Lancer la partie<small>${L.members.length} joueur${L.members.length > 1 ? "s" : ""}</small></button>` : ""}
+        ${sgOptButtons()}
+        <button class="mi" data-act="sgLeave">Quitter le salon</button></nav>`;
   } else {
     const pads = sgPads().length;
     el.innerHTML = `<div><span class="kicker">Nouveau mode · en test</span><div class="big small">Siège du village</div></div>
@@ -860,15 +913,14 @@ function renderSiegeLobby() {
       <nav class="menu-list">
         <button class="mi" data-act="sgSolo">Seul</button>
         <button class="mi" data-act="sgLocal">À deux, même écran<small>${pads >= 2 ? "deux manettes" : pads === 1 ? "clavier-souris + manette" : "branche une manette pour le joueur 2"}</small></button>
-        <button class="mi" data-act="sgHost">Coop en ligne : créer un salon<small>2 à 4 joueurs</small></button>
+        ${PVP.me || pvpPseudo ? "" : `<div class="sync-link"><input id="sgNameInput" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Ton pseudo (pour jouer en ligne)" aria-label="Pseudo"></div>`}
+        <button class="mi" data-act="sgHost">Coop en ligne : créer un salon<small>2 à 4 joueurs${PVP.me || pvpPseudo ? ` · tu joues en tant que ${(PVP.me && PVP.me.pseudo) || pvpPseudo}` : ""}</small></button>
         <div class="sync-link"><input id="sgRoomInput" type="text" maxlength="11" autocomplete="off" spellcheck="false" placeholder="SIEGE-XXXX" aria-label="Code d'un salon"></div>
         <button class="mi" data-act="sgJoin">Rejoindre un salon</button>
-        <button class="mi" data-act="sgAutoFire">Attaque auto : ${onoff(sgAutoFire())}<small>les armes frappent seules</small></button>
-        <button class="mi" data-act="sgAutoAim">Visée auto : ${onoff(sgAutoAim())}<small>vise l'ennemi le plus proche (sinon : souris ou stick droit)</small></button>
+        ${sgOptButtons()}
         <button class="mi" data-act="back">Retour</button>
       </nav>`;
-    const inp = el.querySelector("#sgRoomInput");
-    if (inp) for (const ev of ["keydown", "keyup", "keypress"]) inp.addEventListener(ev, e => { e.stopPropagation(); if (ev === "keydown" && e.key === "Enter") menuAction("sgJoin"); });
+    for (const inp of el.querySelectorAll("input")) for (const ev of ["keydown", "keyup", "keypress"]) inp.addEventListener(ev, e => { e.stopPropagation(); if (ev === "keydown" && e.key === "Enter" && inp.id === "sgRoomInput") menuAction("sgJoin"); });
   }
 }
 
@@ -884,7 +936,16 @@ function renderSiegeLobby() {
   around("frame", (o, now, ...a) => {
     if (!siege || mode !== "play") return o(now, ...a);
     const dt = Math.max(0, Math.min(0.05, (now - lastT) / 1000 || 0)); lastT = now; time += dt;
-    if (screen === "play") siegeUpdate(dt); else pollMenuPad();
+    if (screen === "play") siegeUpdate(dt);
+    else {
+      pollMenuPad();
+      // en ligne, la partie ne s'arrête pas quand un joueur ouvre un menu (choix, attente, pause) : son héros reste immobile
+      if (siege && siege.net && !siege.over) {
+        if (siege.host) siegeUpdate(dt);
+        else { siege.inT = (siege.inT || 0) - dt; if (siege.inT <= 0) { siege.inT = 0.25; siege.net.send("in", { pid: siege.myPid, mx: 0, my: 0, ax: 0, ay: 0, fire: false, aim: false, af: false, aa: false }); } }
+      }
+    }
+    if (siege && siege.net && !siege.host && !siege.over && Date.now() - (siege.lastRx || Date.now()) > 20000) { siege.over = { why: "L'hôte ne répond plus.", wave: siege.wave, kills: siege.kills, level: siege.level, time: siege.time, best: siege.wave }; siege.pickDone = null; sgShowEnd(); }
     siegeDraw();
     requestAnimationFrame(frame);
   });
@@ -893,15 +954,15 @@ function renderSiegeLobby() {
     if (!siege) return o(...a);
     if (siege.over || siege.choice) return;
     if (!siege.net) siege.paused = true;
-    screen = "siegemenu"; menuRoot = "siege";
-    const el = document.getElementById("siegePanel");
-    el.innerHTML = `<div><span class="kicker">Siège · vague ${siege.wave}</span><div class="big small">Pause</div></div>
-      <nav class="menu-list"><button class="mi" data-act="sgResume">Reprendre</button><button class="mi" data-act="sgQuit">Abandonner</button></nav>`;
-    showPanel("siege");
+    sgShowPause();
   });
   around("showPanel", (o, name, ...a) => { const r = o(name, ...a); if (name === "siegeLobby") { menuRoot = "main"; } return r; });
   around("menuAction", (o, act, ...a) => {
-    if (act === "siege") { sgLobbyState = null; showPanel("siege"); renderSiegeLobby(); menuPanel = "siege"; return; }
+    if (act === "siege") {
+      sgLobbyState = null; showPanel("siege"); renderSiegeLobby(); menuPanel = "siege";
+      if (!PVP.me && typeof CLOUD !== "undefined" && CLOUD.secret) pvpProfile().then(() => { if (!siege && !sgLobbyState && menuPanel === "siege") renderSiegeLobby(); }, () => {});
+      return;
+    }
     if (act === "sgSolo") { siegeStart({ players: [{ src: "auto", name: pvpPseudo || "Toi" }] }); return; }
     if (act === "sgLocal") {
       const pads = sgPads().length;
@@ -913,11 +974,22 @@ function renderSiegeLobby() {
     if (act === "sgJoin") { const inp = document.getElementById("sgRoomInput"), v = (inp ? inp.value : "").toUpperCase().replace(/\s+/g, ""); if (!/^SIEGE-[A-Z0-9]{4}$/.test(v)) { toast("Le code ressemble à SIEGE-XXXX.", 2000); return; } sgLobby(v, false); return; }
     if (act === "sgHostStart") { sgHostStart(); return; }
     if (act === "sgLeave") { if (sgLobbyState && sgLobbyState.net) sgLobbyState.net.leave(); sgLobbyState = null; renderSiegeLobby(); return; }
-    if (act === "sgAutoFire") { sgOpts.autoFire = !sgAutoFire(); sgSaveOpts(); renderSiegeLobby(); return; }
-    if (act === "sgAutoAim") { sgOpts.autoAim = !sgAutoAim(); sgSaveOpts(); renderSiegeLobby(); return; }
+    if (act === "sgAutoFire" || act === "sgAutoAim") {
+      if (act === "sgAutoFire") sgOpts.autoFire = !sgAutoFire(); else sgOpts.autoAim = !sgAutoAim();
+      sgSaveOpts();
+      if (siege && !siege.over) sgShowPause(); else renderSiegeLobby();
+      try { const b = document.querySelector(`#siegePanel [data-act="${act}"]`); if (b) b.focus({ preventScroll: true }); } catch (e) {}
+      return;
+    }
     if (act && act.startsWith("sgPick:") && siege && siege.pickDone) { const f = siege.pickDone; siege.pickDone = null; f(act.slice(7)); return; }
     if (act === "sgResume") { if (siege) { siege.paused = false; sgResume(); } return; }
-    if (act === "sgQuit") { if (siege && siege.net) { try { siege.net.send("bye", { pid: siege.myPid || (PVP.me && PVP.me.pid) }); } catch (e) {} } sgLobbyState = null; siegeStop(); return; }
+    if (act === "sgQuit") {
+      if (siege && siege.net) { try {
+        if (siege.host) { if (!siege.over) siege.net.send("end", { why: "L'hôte a quitté la partie.", wave: siege.wave, kills: siege.kills, level: siege.level, time: siege.time, best: siege.wave }); }
+        else siege.net.send("bye", { pid: siege.myPid || (PVP.me && PVP.me.pid) });
+      } catch (e) {} }
+      sgLobbyState = null; siegeStop(); return;
+    }
     if (act === "sgAgain") { const ps = siege.players.map(p => ({ src: p.src, name: p.name })); siegeStop(); siegeStart({ players: ps }); return; }
     if (act === "back" && siege && screen === "siegemenu") { if (!siege.over && !siege.choice && !siege.pickDone) { siege.paused = false; sgResume(); } return; }
     return o(act, ...a);

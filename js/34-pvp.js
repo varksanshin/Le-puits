@@ -5,7 +5,7 @@
    2. « Partie rapide » cherche un adversaire en ligne, ou « Salon privé » donne un code à partager (DUEL-XXXX) ;
    3. le DRAFT : cinq fois, on choisit un objet parmi trois tirés au hasard (20 s par choix) ;
    4. le COMBAT : les deux héros, avec tous les pouvoirs et leurs 5 objets, dans l'arène. Manches de 90 s,
-      le premier à 2 manches gagne. Pas de pause en duel (Échap deux fois = abandonner) ;
+      le premier à 3 manches gagne. Pas de pause en duel (Échap deux fois = abandonner) ;
    5. le CLASSEMENT : un score Elo (1000 au départ) qui monte ou baisse selon le résultat.
    Réseau : Supabase Realtime (canaux « broadcast » et « presence »), chargé seulement quand on ouvre le mode.
    Chaque joueur décide de ses propres coups : quand MON coup touche l'autre, j'envoie les dégâts, et c'est lui qui
@@ -13,14 +13,15 @@
    Le 2v2 viendra ensuite (même principe, deux équipes). */
 
 const PVP = {
-  version: 1, picks: 5, offers: 3, pickTime: 20, rounds: 2, roundTime: 90, hpPerHeart: 10, dmgScale: 6, sendHz: 15,
+  version: 2, picks: 5, offers: 3, pickTime: 20, rounds: 3, roundTime: 90, meleeTol: 60, hpPerHeart: 10, dmgScale: 6, sendHz: 15,
   phase: "off", me: null, opp: null, match: null, seed: 0, host: false, draft: null, myItems: [], oppItems: null,
   score: [0, 0], round: 0, roundT: 0, countdown: 0, over: 0, hp: 0, maxHp: 0, chan: null, queue: null, status: "",
   prev: null, rival: null, lastSend: 0, lastSeen: 0, escT: 0, result: null,
 };
 // Objets qui n'ont pas de sens en duel (butin, exploration, ténèbres…)
 const PVP_BAN = new Set(["lapin", "trousseau", "bourse", "aimant", "sceau", "carte", "boussole", "fer", "tirelire", "sel", "couronne", "avarice",
-  "oeil", "de", "eaubenite", "lanterne", "sablier", "miroir", "phenix", "affamee", "epines"]);
+  "oeil", "de", "eaubenite", "lanterne", "sablier", "miroir", "phenix", "affamee", "epines",
+  "chouette"]);   // Plume de chouette : les tirs téléguidés rendent le duel injouable
 const pvpPool = () => ITEMS.filter(it => !it.soon && !PVP_BAN.has(it.id));
 let pvpPseudo = null;
 try { pvpPseudo = localStorage.getItem("lepuits.pseudo"); } catch (e) {}
@@ -307,6 +308,10 @@ function pvpTakeHit(m) {
   if (PVP.shield) {                                          // Bouclier de lumière : un coup bloqué par manche
     PVP.shield = false; p.invuln = 0.5; burst(p.x + p.w / 2, p.y + p.h / 2, 16, "#fff6c8", 90); popText(p.x + p.w / 2, p.y - 4, "BLOQUE", "#fff6c8"); return;
   }
+  if (m.near && m.ax != null) {
+    const dx = (p.x + p.w / 2) - m.ax, dy = (p.y + p.h / 2) - m.ay;
+    if (Math.hypot(dx, dy) > PVP.meleeTol) return;           // chez moi, il était trop loin : on ignore le coup
+  }
   const d = Math.max(1, Math.round((+m.d || 0) * PVP.dmgScale));
   PVP.hp = Math.max(0, PVP.hp - d);
   p.hp = Math.max(1, Math.ceil(PVP.hp / PVP.hpPerHeart));
@@ -392,9 +397,30 @@ function pvpSendState() {
   if (!p || !PVP.chan || now - PVP.lastSend < 1000 / PVP.sendHz) return;
   PVP.lastSend = now;
   PVP.chan.send("st", { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, vx: Math.round(p.vx), vy: Math.round(p.vy), f: p.face, g: p.onGround ? 1 : 0,
-    a: p.atkTimer > 0 ? p.atkDir : 0, ch: p.charge > 0.2 ? 1 : 0, d: p.dashTimer > 0 ? 1 : 0, ph: p.phasing ? 1 : 0, dv: p.diving ? 1 : 0, hp: PVP.hp, mx: PVP.maxHp, r: PVP.round });
+    a: p.atkTimer > 0 ? p.atkDir : 0, ch: p.charge > 0.2 ? 1 : 0, d: p.dashTimer > 0 ? 1 : 0, ph: p.phasing ? 1 : 0, dv: p.diving ? 1 : 0, hp: PVP.hp, mx: PVP.maxHp, r: PVP.round,
+    // mes sorts, pour que l'adversaire les voie arriver
+    pj: PVP.phase === "fight" ? projectiles.slice(0, 24).map(q => [Math.round(q.x), Math.round(q.y), q.w, q.h, Math.round(q.vx), Math.round(q.vy), q.kind, q.boomer ? 1 : 0]) : [],
+    hz: PVP.phase === "fight" ? hazards.slice(0, 12).map(h => [Math.round(h.x), Math.round(h.y), h.w, h.h]) : [] });
 }
 
+// Les sorts de l'adversaire (projectiles, feu au sol) : on les avance depuis le dernier état reçu
+function pvpDrawOppSpells(ox, oy) {
+  const s = PVP.oppState; if (!s || s.r !== PVP.round) return;
+  const lag = Math.min(0.2, (Date.now() - (PVP.oppStateAt || Date.now())) / 1000);
+  for (const h of s.hz || []) {
+    const x = snap(h[0] - ox), y = snap(h[1] - oy);
+    ctx.fillStyle = "rgba(224,69,60,0.35)"; ctx.fillRect(x, y, h[2], h[3]);
+    ctx.fillStyle = "#f2b54a"; for (let i = 0; i < h[2]; i += 3) ctx.fillRect(x + i, y + h[3] - 2 - ((i * 7 + Math.floor(time * 12)) % 3), 1.34, 2);
+  }
+  for (const a of s.pj || []) {
+    const q = { x: a[0] + a[4] * lag, y: a[1] + a[5] * lag, w: a[2], h: a[3], vx: a[4], vy: a[5], kind: a[6], boomer: !!a[7], t: time, life: 1 };
+    const x = snap(q.x - ox), y = snap(q.y - oy);
+    // un liseré rouge : c'est un sort ennemi
+    ctx.fillStyle = "rgba(224,69,60,0.55)"; ctx.fillRect(x - 1, y - 1, q.w + 2, q.h + 2);
+    if (q.kind === "bolt") { ctx.fillStyle = "#e07a6a"; ctx.fillRect(x, y, q.w, q.h); ctx.fillStyle = "#ffe6e0"; ctx.fillRect(x + 1.5, y + 1, 3, 2); }
+    else if (typeof drawProjectileExtra === "function") { try { drawProjectileExtra(q, x, y); } catch (e) { ctx.fillStyle = "#ffd0c8"; ctx.fillRect(x, y, q.w, q.h); } }
+  }
+}
 // La ligne des 5 objets en bas de l'écran (et ceux de l'adversaire pendant le combat)
 function pvpDrawSlots() {
   const row = (ids, x0, label, col, n) => {
@@ -439,7 +465,9 @@ function pvpDrawSlots() {
   around("hitEnemy", (o, e, dmg, dirX, opt = {}, ...a) => {
     if (!e || !e.rival) return o(e, dmg, dirX, opt, ...a);
     if (PVP.phase !== "fight" || PVP.countdown > 0 || PVP.over > 0 || e.hidden) return;
-    PVP.chan && PVP.chan.send("dmg", { d: Math.round(dmg * 100) / 100, dir: dirX || Math.sign(e.x - player.x) || 1, up: !!opt.up, down: !!opt.down, r: PVP.round });
+    const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2, near = Math.hypot(e.x + e.w / 2 - pcx, e.y + e.h / 2 - pcy) < 40;
+    PVP.chan && PVP.chan.send("dmg", { d: Math.round(dmg * 100) / 100, dir: dirX || Math.sign(e.x - player.x) || 1, up: !!opt.up, down: !!opt.down, r: PVP.round,
+      near: near ? 1 : 0, ax: Math.round(pcx), ay: Math.round(pcy) });
     e.flash = 0.12; e.hitFx = 0.16;
     if (typeof hitSparks === "function" && opt.freeze !== 0) hitSparks(e, dirX, opt);
     freeze = Math.max(freeze, opt.freeze ?? 0.05);
@@ -483,6 +511,7 @@ function pvpDrawSlots() {
     ctx.setTransform(S, 0, 0, S, 0, 0);
     const e = PVP.rival, ox = snap(cam.x), oy = snap(cam.y);
     if (PVP.phase !== "fight") return r;
+    pvpDrawOppSpells(ox, oy);
     pvpDrawSlots();
     // le nom et la barre de vie au-dessus du rival
     if (e && !e.hidden) {
@@ -516,7 +545,7 @@ function pvpDrawSlots() {
   // ----- Les menus -----
   around("showPanel", (o, name, ...a) => {
     const r = o(name, ...a);
-    if (name === "pvp") { renderPvp(); if (!PVP.me && PVP.phase === "off") { PVP.phase = "lobby"; pvpProfile().then(renderPvp, () => { PVP.status = "Hors ligne : le duel demande une connexion."; renderPvp(); }); } }
+    if (name === "pvp") { renderPvp(); if (!PVP.me && (PVP.phase === "off" || PVP.phase === "lobby")) { PVP.phase = "lobby"; pvpProfile().then(renderPvp, () => { PVP.status = "Hors ligne : le duel demande une connexion."; renderPvp(); }); } }
     if (name === "pvpRank") renderRank();
     return r;
   });
@@ -551,7 +580,8 @@ function renderPvp() {
     body = `<p class="pvp-help">Choisis un pseudo pour jouer en ligne et apparaître au classement.</p>
       <div class="sync-link"><input id="pvpPseudoInput" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Ton pseudo" value="${(pvpPseudo || "").replace(/"/g, "")}" aria-label="Pseudo"></div>
       <p class="pvp-status">${PVP.status || ""}</p>
-      <nav class="menu-list"><button class="mi" data-act="pvpPseudo">Valider le pseudo</button><button class="mi" data-act="pvpRank">Classement</button><button class="mi" data-act="back">Retour</button></nav>`;
+      <nav class="menu-list"><button class="mi" data-act="pvpPseudo">Valider le pseudo</button><button class="mi" data-act="pvpRank">Classement</button><button class="mi" data-act="back">Retour</button></nav>
+      <p class="pvp-help">Tu as déjà un pseudo sur un autre appareil ? Ne le recrée pas : va dans <b>Synchroniser</b> et entre le code <b>PUITS-…</b> de ton autre appareil. Tu retrouves ton pseudo, ton classement et ta progression.</p>`;
   } else if (PVP.phase === "search" || PVP.phase === "connect") {
     body = `<p class="pvp-me"><b>${me.pseudo}</b> · ${me.rating}</p>
       ${PVP.room ? `<p class="sync-code"><small>Code du salon</small><b>${PVP.room}</b></p>` : ""}
@@ -559,7 +589,7 @@ function renderPvp() {
       <nav class="menu-list"><button class="mi" data-act="pvpCancel">Annuler</button></nav>`;
   } else {
     body = `<p class="pvp-me"><b>${me.pseudo}</b> · ${me.rating} <span>${me.wins || 0} V · ${me.losses || 0} D</span></p>
-      <p class="pvp-help">Draft de 5 objets (un parmi trois à chaque fois), puis duel avec tous les pouvoirs. Deux manches gagnantes.</p>
+      <p class="pvp-help">Draft de 5 objets (un parmi trois à chaque fois), puis duel avec tous les pouvoirs. Trois manches gagnantes.</p>
       <p class="pvp-status">${PVP.status || ""}</p>
       <nav class="menu-list">
         <button class="mi" data-act="pvpQuick">Partie rapide · 1 contre 1<small>contre un joueur en ligne</small></button>

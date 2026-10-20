@@ -150,7 +150,7 @@ async function cloudLink(code) {
   if (code === CLOUD.code) { toast("C'est déjà le code de cet appareil.", 2000); return false; }
   CLOUD.busy = true;
   try {
-    const secret = cloudSecret();
+    const secret = cloudSecret(), oldSecret = CLOUD.secret;
     const rows = await cloudRpc("cloud_link", { p_code: code, p_new_secret: secret });
     const remote = rows && rows[0] && rows[0].data && rows[0].data.keys ? rows[0].data.keys : {};
     cloudApply(cloudMerge(cloudSnapshot().keys, remote));
@@ -158,6 +158,11 @@ async function cloudLink(code) {
     const snap = cloudSnapshot();
     await cloudRpc("cloud_push", { p_secret: CLOUD.secret, p_data: snap });
     CLOUD.pushed = JSON.stringify(snap.keys); CLOUD.last = Date.now(); CLOUD.status = "ok"; saveCloud();
+    // le pseudo de duel suit l'appareil (si l'autre appareil n'en a pas encore), puis on recharge le profil
+    if (typeof PVP !== "undefined") {
+      try { if (oldSecret) await cloudRpc("pvp_claim", { p_old_secret: oldSecret, p_secret: secret }); } catch (e) {}
+      try { PVP.me = null; await pvpProfile(); } catch (e) {}
+    }
     toast("Appareil lié ! Ta progression est la même partout.", 3000);
     if (typeof SFX !== "undefined") SFX.play("relic");
     return true;
