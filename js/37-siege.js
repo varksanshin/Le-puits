@@ -844,11 +844,7 @@ function sgApplySnap(m) {
 async function sgLobby(code, asHost) {
   // pas besoin de passer par le Duel : on retrouve le pseudo du compte, sinon on prend celui tapé ici
   if (!PVP.me) await pvpProfile().catch(() => null);
-  if (!PVP.me && !pvpPseudo) {
-    const inp = document.getElementById("sgNameInput"), v = inp ? inp.value.trim() : "";
-    if (!v) { toast("Écris ton pseudo pour jouer en ligne.", 2400); if (inp) inp.focus(); return; }
-    if (!(await pvpSetPseudo(v))) return;
-  }
+  if (!PVP.me) { toast("Crée ton compte ou connecte-toi (pseudo + mot de passe) pour jouer en ligne.", 3000); renderSiegeLobby(); return; }
   await cloudEnsure().catch(() => {});
   const me = PVP.me || { pid: "g-" + pvpId(8), pseudo: pvpPseudo || "Joueur" };
   if (!me.pid) me.pid = "g-" + pvpId(8);
@@ -934,14 +930,14 @@ function renderSiegeLobby() {
       <nav class="menu-list">
         <button class="mi" data-act="sgSolo">Seul</button>
         <button class="mi" data-act="sgLocal">À deux, même écran<small>${pads >= 2 ? "deux manettes" : pads === 1 ? "clavier-souris + manette" : "branche une manette pour le joueur 2"}</small></button>
-        ${PVP.me || pvpPseudo ? "" : `<div class="sync-link"><input id="sgNameInput" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Ton pseudo (pour jouer en ligne)" aria-label="Pseudo"></div>`}
-        <button class="mi" data-act="sgHost">Coop en ligne : créer un salon<small>2 à 4 joueurs${PVP.me || pvpPseudo ? ` · tu joues en tant que ${(PVP.me && PVP.me.pseudo) || pvpPseudo}` : ""}</small></button>
+        ${pvpAccountForm()}
+        <button class="mi" data-act="sgHost">Coop en ligne : créer un salon<small>2 à 4 joueurs${PVP.me ? ` · tu joues en tant que ${PVP.me.pseudo}` : " · compte en ligne nécessaire"}</small></button>
         <div class="sync-link"><input id="sgRoomInput" type="text" maxlength="11" autocomplete="off" spellcheck="false" placeholder="SIEGE-XXXX" aria-label="Code d'un salon"></div>
         <button class="mi" data-act="sgJoin">Rejoindre un salon</button>
         ${sgOptButtons()}
         <button class="mi" data-act="back">Retour</button>
       </nav>`;
-    for (const inp of el.querySelectorAll("input")) for (const ev of ["keydown", "keyup", "keypress"]) inp.addEventListener(ev, e => { e.stopPropagation(); if (ev === "keydown" && e.key === "Enter" && inp.id === "sgRoomInput") menuAction("sgJoin"); });
+    pvpBindInputs(el);
   }
 }
 

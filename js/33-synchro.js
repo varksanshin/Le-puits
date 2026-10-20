@@ -144,6 +144,21 @@ async function cloudSync(force) {
   } catch (e) { CLOUD.status = "erreur : " + e.message; return false; }
   finally { CLOUD.busy = false; if (typeof menuPanel !== "undefined" && menuPanel === "sync") renderSync(); }
 }
+// Cet appareil rejoint un espace existant (code PUITS-… ou connexion pseudo + mot de passe) :
+// on fusionne la progression des deux côtés, puis on recharge le profil en ligne
+async function cloudAdopt(secret, row, oldSecret, claimPseudo) {
+  const remote = row && row.data && row.data.keys ? row.data.keys : {};
+  cloudApply(cloudMerge(cloudSnapshot().keys, remote));
+  CLOUD.secret = secret; CLOUD.code = row ? row.code : CLOUD.code; saveCloud();
+  const snap = cloudSnapshot();
+  try { await cloudRpc("cloud_push", { p_secret: CLOUD.secret, p_data: snap }); CLOUD.pushed = JSON.stringify(snap.keys); } catch (e) {}
+  CLOUD.last = Date.now(); CLOUD.status = "ok"; saveCloud();
+  if (typeof PVP !== "undefined") {
+    // le pseudo de cet appareil suit (si l'autre espace n'en a pas encore)
+    if (claimPseudo) { try { if (oldSecret) await cloudRpc("pvp_claim", { p_old_secret: oldSecret, p_secret: secret }); } catch (e) {} }
+    try { PVP.me = null; await pvpProfile(); } catch (e) {}
+  }
+}
 async function cloudLink(code) {
   code = String(code || "").toUpperCase().replace(/\s+/g, "");
   if (!/^PUITS-[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(code)) { toast("Le code ressemble à PUITS-XXXXX-XXXXX.", 2400); return false; }
@@ -152,17 +167,7 @@ async function cloudLink(code) {
   try {
     const secret = cloudSecret(), oldSecret = CLOUD.secret;
     const rows = await cloudRpc("cloud_link", { p_code: code, p_new_secret: secret });
-    const remote = rows && rows[0] && rows[0].data && rows[0].data.keys ? rows[0].data.keys : {};
-    cloudApply(cloudMerge(cloudSnapshot().keys, remote));
-    CLOUD.secret = secret; CLOUD.code = rows[0].code; saveCloud();
-    const snap = cloudSnapshot();
-    await cloudRpc("cloud_push", { p_secret: CLOUD.secret, p_data: snap });
-    CLOUD.pushed = JSON.stringify(snap.keys); CLOUD.last = Date.now(); CLOUD.status = "ok"; saveCloud();
-    // le pseudo de duel suit l'appareil (si l'autre appareil n'en a pas encore), puis on recharge le profil
-    if (typeof PVP !== "undefined") {
-      try { if (oldSecret) await cloudRpc("pvp_claim", { p_old_secret: oldSecret, p_secret: secret }); } catch (e) {}
-      try { PVP.me = null; await pvpProfile(); } catch (e) {}
-    }
+    await cloudAdopt(secret, rows && rows[0], oldSecret, true);
     toast("Appareil lié ! Ta progression est la même partout.", 3000);
     if (typeof SFX !== "undefined") SFX.play("relic");
     return true;

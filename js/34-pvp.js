@@ -62,25 +62,77 @@ const hashStr = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.c
 // ----- Pseudo et profil -----
 async function pvpProfile() {
   await cloudEnsure();
-  const rows = await pvpRpc("pvp_me", { p_secret: CLOUD.secret });
+  let rows;
+  try { rows = await pvpRpc("pvp_me2", { p_secret: CLOUD.secret }); } catch (e) { rows = await pvpRpc("pvp_me", { p_secret: CLOUD.secret }); }
   if (rows && rows[0]) { PVP.me = rows[0]; pvpPseudo = rows[0].pseudo; try { localStorage.setItem("lepuits.pseudo", pvpPseudo); } catch (e) {} }
   else PVP.me = null;
   return PVP.me;
 }
-async function pvpSetPseudo(name) {
-  name = String(name || "").trim();
-  if (!/^[A-Za-z0-9_\-àâäéèêëïîôöùûüçÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ]{3,16}$/.test(name)) { toast("Pseudo : 3 à 16 caractères, lettres, chiffres, - et _.", 2800); return false; }
+/* Le compte en ligne : un pseudo + un mot de passe.
+   - « Créer mon compte » : le pseudo est rattaché à l'espace de cet appareil ;
+   - « Me connecter » : après un crash, sur un autre appareil ou un autre lien du jeu, on retrouve son pseudo,
+     son classement et sa progression (cet appareil rejoint l'espace du compte). */
+const PSEUDO_RE = /^[A-Za-z0-9_\-àâäéèêëïîôöùûüçÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ]{3,16}$/;
+function pvpCheckForm(name, pass) {
+  if (!PSEUDO_RE.test(name)) { toast("Pseudo : 3 à 16 caractères, lettres, chiffres, - et _.", 2800); return false; }
+  if (!pass || pass.length < 4) { toast("Mot de passe : au moins 4 caractères.", 2400); return false; }
+  return true;
+}
+function pvpRemember() { pvpPseudo = PVP.me && PVP.me.pseudo; try { if (pvpPseudo) localStorage.setItem("lepuits.pseudo", pvpPseudo); } catch (e) {} }
+async function pvpSetPseudo(name, pass) {
+  name = String(name || "").trim(); pass = String(pass || "");
+  if (!pvpCheckForm(name, pass)) return false;
   try {
     await cloudEnsure();
-    const rows = await pvpRpc("pvp_set_pseudo", { p_secret: CLOUD.secret, p_pseudo: name });
-    PVP.me = { ...(PVP.me || {}), ...rows[0] }; pvpPseudo = PVP.me.pseudo;
-    try { localStorage.setItem("lepuits.pseudo", pvpPseudo); } catch (e) {}
-    toast(`Tu t'appelles maintenant <b>${pvpPseudo}</b>.`, 2200, true);
+    const rows = await pvpRpc("pvp_set_pseudo2", { p_secret: CLOUD.secret, p_pseudo: name, p_pass: pass });
+    PVP.me = { ...(PVP.me || {}), ...rows[0] }; pvpRemember();
+    toast(`Compte prêt : <b>${pvpPseudo}</b>. Retiens ton mot de passe pour te reconnecter partout.`, 3200, true);
     return true;
   } catch (e) {
-    toast(/pris/.test(e.message) ? "Ce pseudo est déjà pris." : /invalide/.test(e.message) ? "Pseudo refusé : 3 à 16 caractères, lettres, chiffres, - et _." : "Impossible de joindre le serveur.", 2600);
+    toast(/pris/.test(e.message) ? "Ce pseudo existe déjà. Si c'est le tien, clique sur « Me connecter »." : /invalide/.test(e.message) ? "Pseudo ou mot de passe refusé." : "Impossible de joindre le serveur.", 3200);
     return false;
   }
+}
+async function pvpLogin(name, pass) {
+  name = String(name || "").trim(); pass = String(pass || "");
+  if (!pvpCheckForm(name, pass)) return false;
+  try {
+    const secret = cloudSecret(), oldSecret = CLOUD.secret;
+    const rows = await pvpRpc("pvp_login", { p_pseudo: name, p_pass: pass, p_new_secret: secret });
+    await cloudAdopt(secret, rows && rows[0], oldSecret, false);
+    pvpRemember();
+    toast(PVP.me ? `Re-bonjour <b>${PVP.me.pseudo}</b> ! Pseudo, classement et progression retrouvés.` : "Connecté.", 3000, true);
+    return !!PVP.me;
+  } catch (e) {
+    const m = e.message || "";
+    toast(/inconnu/.test(m) ? "Ce pseudo n'existe pas. Crée ton compte." : /mauvais/.test(m) ? "Mauvais mot de passe." : /essais/.test(m) ? "Trop d'essais : réessaie dans 10 minutes."
+      : /pas de mot de passe/.test(m) ? "Ce compte n'a pas encore de mot de passe : demande à le libérer, ou ajoute-le depuis l'appareil où il est connecté." : "Impossible de joindre le serveur.", 3600);
+    return false;
+  }
+}
+// Le formulaire, partagé par le Duel et le Siège
+function pvpAccountForm() {
+  const me = PVP.me;
+  const field = (id, type, ph, val = "") => `<div class="sync-link"><input id="${id}" type="${type}" maxlength="${type === "password" ? 64 : 16}" autocomplete="${type === "password" ? "current-password" : "username"}" spellcheck="false" placeholder="${ph}" value="${val}" aria-label="${ph}"></div>`;
+  if (!me) return `<p class="pvp-help">Ton compte en ligne : un pseudo et un mot de passe. Avec les deux, tu retrouves ton pseudo, ton classement et ta progression sur n'importe quel appareil, même après un crash.</p>
+      ${field("acctName", "text", "Pseudo", (pvpPseudo || "").replace(/"/g, ""))}${field("acctPass", "password", "Mot de passe (4 caractères min.)")}
+      <button class="mi" data-act="acctCreate">Créer mon compte<small>nouveau pseudo</small></button>
+      <button class="mi" data-act="acctLogin">Me connecter<small>j'ai déjà un pseudo</small></button>`;
+  if (me.has_pass === false) return `<p class="pvp-status">Ton pseudo <b>${me.pseudo}</b> n'a pas encore de mot de passe : sans lui, tu le perds si ton navigateur oublie ce compte.</p>
+      ${field("acctName", "text", "Pseudo", me.pseudo)}${field("acctPass", "password", "Choisis un mot de passe")}
+      <button class="mi" data-act="acctCreate">Protéger mon pseudo</button>`;
+  return "";
+}
+function pvpAccountRefresh() { if (typeof menuPanel !== "undefined" && menuPanel === "siege" && typeof renderSiegeLobby === "function") renderSiegeLobby(); else renderPvp(); }
+function pvpBindInputs(el) {
+  for (const inp of el.querySelectorAll("input")) for (const ev of ["keydown", "keyup", "keypress"]) inp.addEventListener(ev, e => {
+    e.stopPropagation();
+    if (ev !== "keydown" || e.key !== "Enter") return;
+    if (inp.id === "pvpRoomInput") menuAction("pvpJoin");
+    else if (inp.id === "sgRoomInput") menuAction("sgJoin");
+    else if (inp.id === "acctName" || inp.id === "acctPass") menuAction(PVP.me && PVP.me.has_pass === false ? "acctCreate" : "acctLogin");
+    else if (inp.id === "pvpPseudoInput" || inp.id === "pvpPassInput") menuAction("pvpPseudo");
+  });
 }
 
 // ----- Trouver un adversaire -----
@@ -551,7 +603,12 @@ function pvpDrawSlots() {
   });
   around("menuAction", (o, act, ...a) => {
     if (act === "pvp") { if (PVP.phase === "off" || PVP.phase === "result") PVP.phase = "lobby"; showPanel("pvp"); return; }
-    if (act === "pvpPseudo") { const inp = document.getElementById("pvpPseudoInput"); pvpSetPseudo(inp ? inp.value : "").then(renderPvp); return; }
+    if (act === "pvpPseudo") { const a = document.getElementById("pvpPseudoInput"), b = document.getElementById("pvpPassInput"); pvpSetPseudo(a ? a.value : "", b ? b.value : "").then(renderPvp); return; }
+    if (act === "acctCreate" || act === "acctLogin") {
+      const a = document.getElementById("acctName"), b = document.getElementById("acctPass");
+      (act === "acctCreate" ? pvpSetPseudo : pvpLogin)(a ? a.value : "", b ? b.value : "").then(pvpAccountRefresh);
+      return;
+    }
     if (act === "pvpQuick") { pvpSearch(null); return; }
     if (act === "pvpRoom") { pvpSearch("DUEL-" + pvpId(4)); return; }
     if (act === "pvpJoin") { const inp = document.getElementById("pvpRoomInput"), v = (inp ? inp.value : "").toUpperCase().replace(/\s+/g, ""); if (!/^DUEL-[A-Z0-9]{4}$/.test(v)) { toast("Le code ressemble à DUEL-XXXX.", 2000); return; } pvpSearch(v); return; }
@@ -577,11 +634,8 @@ function renderPvp() {
         <span>${R.rating != null ? `Classement : ${R.rating} (${R.delta >= 0 ? "+" : ""}${R.delta})` : "Classement en cours de mise à jour…"}</span></div>
       <nav class="menu-list"><button class="mi" data-act="pvpAgain">Rejouer</button><button class="mi" data-act="pvpRank">Classement</button><button class="mi" data-act="back">Retour</button></nav>`;
   } else if (!me) {
-    body = `<p class="pvp-help">Choisis un pseudo pour jouer en ligne et apparaître au classement.</p>
-      <div class="sync-link"><input id="pvpPseudoInput" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Ton pseudo" value="${(pvpPseudo || "").replace(/"/g, "")}" aria-label="Pseudo"></div>
-      <p class="pvp-status">${PVP.status || ""}</p>
-      <nav class="menu-list"><button class="mi" data-act="pvpPseudo">Valider le pseudo</button><button class="mi" data-act="pvpRank">Classement</button><button class="mi" data-act="back">Retour</button></nav>
-      <p class="pvp-help">Tu as déjà un pseudo sur un autre appareil ? Ne le recrée pas : va dans <b>Synchroniser</b> et entre le code <b>PUITS-…</b> de ton autre appareil. Tu retrouves ton pseudo, ton classement et ta progression.</p>`;
+    body = `<p class="pvp-status">${PVP.status || ""}</p>
+      <nav class="menu-list">${pvpAccountForm()}<button class="mi" data-act="pvpRank">Classement</button><button class="mi" data-act="back">Retour</button></nav>`;
   } else if (PVP.phase === "search" || PVP.phase === "connect") {
     body = `<p class="pvp-me"><b>${me.pseudo}</b> · ${me.rating}</p>
       ${PVP.room ? `<p class="sync-code"><small>Code du salon</small><b>${PVP.room}</b></p>` : ""}
@@ -592,22 +646,24 @@ function renderPvp() {
       <p class="pvp-help">Draft de 5 objets (un parmi trois à chaque fois), puis duel avec tous les pouvoirs. Trois manches gagnantes.</p>
       <p class="pvp-status">${PVP.status || ""}</p>
       <nav class="menu-list">
+        ${pvpAccountForm()}
         <button class="mi" data-act="pvpQuick">Partie rapide · 1 contre 1<small>contre un joueur en ligne</small></button>
         <button class="mi" data-act="pvpRoom">Créer un salon privé<small>donne le code à un ami</small></button>
         <div class="sync-link"><input id="pvpRoomInput" type="text" maxlength="9" autocomplete="off" spellcheck="false" placeholder="DUEL-XXXX" aria-label="Code d'un salon"></div>
         <button class="mi" data-act="pvpJoin">Rejoindre un salon</button>
         <button class="mi" disabled>2 contre 2<small>bientôt</small></button>
         <button class="mi" data-act="pvpRank">Classement</button>
-        <div class="sync-link"><input id="pvpPseudoInput" type="text" maxlength="16" autocomplete="off" spellcheck="false" value="${me.pseudo}" aria-label="Pseudo"></div>
-        <button class="mi" data-act="pvpPseudo">Changer de pseudo</button>
+        ${me.has_pass === false ? "" : `<div class="sync-link"><input id="pvpPseudoInput" type="text" maxlength="16" autocomplete="username" spellcheck="false" value="${me.pseudo}" aria-label="Pseudo"></div>
+        <div class="sync-link"><input id="pvpPassInput" type="password" maxlength="64" autocomplete="new-password" spellcheck="false" placeholder="Mot de passe (actuel ou nouveau)" aria-label="Mot de passe"></div>
+        <button class="mi" data-act="pvpPseudo">Changer de pseudo ou de mot de passe</button>
+        <div class="sync-link"><input id="acctName" type="text" maxlength="16" autocomplete="username" spellcheck="false" placeholder="Autre pseudo" aria-label="Autre pseudo"></div>
+        <div class="sync-link"><input id="acctPass" type="password" maxlength="64" autocomplete="current-password" spellcheck="false" placeholder="Son mot de passe" aria-label="Son mot de passe"></div>
+        <button class="mi" data-act="acctLogin">Me connecter à un autre compte</button>`}
         <button class="mi" data-act="back">Retour</button>
       </nav>`;
   }
   el.innerHTML = `<div><span class="kicker">En ligne</span><div class="big small">Duel</div></div>${body}`;
-  for (const inp of el.querySelectorAll("input")) for (const ev of ["keydown", "keyup", "keypress"]) inp.addEventListener(ev, e => {
-    e.stopPropagation();
-    if (ev === "keydown" && e.key === "Enter") menuAction(inp.id === "pvpRoomInput" ? "pvpJoin" : "pvpPseudo");
-  });
+  pvpBindInputs(el);
 }
 async function renderRank() {
   const el = document.getElementById("pvpRankPanel"); if (!el) return;
