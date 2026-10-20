@@ -62,6 +62,28 @@ function onProjHit(q, e) {
     const w = function (...a) { return f.call(this, orig.bind(this), ...a); };
     try { eval(`${name} = w`); } catch (e) {}
   };
+  // Les effets « élémentaires » passent par TOUS tes coups : épée, plongeon, frappe chargée, dash, grappin,
+  // ondes de choc, explosions, projectiles, compagnons… (pas les dégâts qui durent, pour éviter les boucles)
+  around("hitEnemy", (o, e, dmg, dirX, opt = {}, ...a) => {
+    const mine = e && !e.dead && !e.rival && opt.freeze !== 0;
+    const r = o(e, dmg, dirX, opt, ...a);
+    if (mine && !e.dead) {
+      if (has("lamebraise")) { e.burn = Math.max(e.burn || 0, e.boss ? 2 : 3); e.burnT = Math.min(e.burnT || 0.3, 0.3); }
+      if (has("venin")) { e.bleed = Math.max(e.bleed || 0, 3); e.bleedT = Math.min(e.bleedT || 0.3, 0.3); }
+      if (has("pilon") && !e.boss) e.stun = Math.max(e.stun, 0.6);
+    }
+    return r;
+  });
+  // Les projectiles portent la couleur de tes éléments : feu, poison, foudre
+  around("updateProjectiles", (o, dt, ...a) => {
+    const r = o(dt, ...a);
+    const fx = [has("lamebraise") && ["#f2b54a", "#e8913a"], has("venin") && ["#9cbf6a", "#4f6b3a"], has("foudre") && ["#fff3b8", "#c8a83a"]].filter(Boolean);
+    if (fx.length) for (const q of projectiles) if (PROJ_SHAPE.has(q.kind) && Math.random() < dt * 30) {
+      const c = fx[Math.floor(Math.random() * fx.length)];
+      particles.push({ x: q.x + Math.random() * q.w, y: q.y + Math.random() * q.h, vx: -q.vx * 0.05, vy: c[0] === "#9cbf6a" ? 25 : -25, life: 0.3, max: 0.3, color: c[Math.random() < 0.5 ? 0 : 1], g: 0 });
+    }
+    return r;
+  });
   around("eligibleItems", (o, ...a) => o(...a).filter(it => !ITEM_OFF.has(it.id)));
   // la Plume de chouette guide tous les projectiles (pas seulement le tir)
   around("steerProjectile", (o, q, dt, ...a) => {
