@@ -62,6 +62,7 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
   vendor/supabase.js       la bibliothèque Supabase (chargée seulement quand on ouvre le duel)
   35-objets-au-sol.js      la touche Action, les objets qui tombent au sol, les synergies universelles, ITEM_OFF (objets retirés des tirages : vide pour l'instant)
   36-gardiens-zones.js     un gardien par zone (ZONE_BOSSES), leurs PV selon la profondeur, la Gorgone-Mère et le Templier déchu
+  37-siege.js              mode Siège (en test) : vue du dessus, vagues, niveaux et objets, coop locale et en ligne ; réglages dans SG, SG_ENEMIES, SG_UPGRADES, SG_ITEMS
   33-synchro.js            synchronise la progression entre appareils (code de reprise, Supabase : cloud_saves)
   32-en-ligne.js           envoie un résumé anonyme de chaque partie à Supabase (projet « le-puits ») pour l'équilibrage
   29-demarrage.js          le démarrage du jeu (toujours le dernier)

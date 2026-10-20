@@ -12,7 +12,7 @@
 <div class="wrap">
   <header>
     <h1>Le <span>Puits</span></h1>
-    <div class="ver">Moteur · prototype 0.23</div>
+    <div class="ver">Moteur · prototype 0.24</div>
   </header>
 
   <div class="modebar">
@@ -54,6 +54,7 @@
           <button class="mi" data-act="story">Mode histoire</button>
           <button class="mi" data-act="chaos">Mode chaos<small>nouvelle map à chaque partie</small></button>
           <button class="mi" data-act="pvp">Duel en ligne<small>draft de 5 objets puis combat contre un joueur</small></button>
+          <button class="mi" data-act="siege">Siège du village<small>nouveau · en test · défends le village, seul ou en coop</small></button>
           <button class="mi" data-act="daily">Graine du jour<small>la même map pour tout le monde · un seul essai par jour</small></button>
           <button class="mi" data-act="heritage">Héritage<small>améliorations permanentes</small></button>
           <button class="mi" data-act="sync">Synchroniser<small>ta progression sur PC et téléphone</small></button>
@@ -92,6 +93,7 @@
       <div class="menu-panel heritage-panel" data-panel="heritage" id="heritagePanel" hidden></div>
       <div class="menu-panel sync-panel" data-panel="sync" id="syncPanel" hidden></div>
       <div class="menu-panel pvp-panel" data-panel="pvp" id="pvpPanel" hidden></div>
+      <div class="menu-panel pvp-panel" data-panel="siege" id="siegePanel" hidden></div>
       <div class="menu-panel pvp-panel" data-panel="pvpDraft" id="pvpDraftPanel" hidden></div>
       <div class="menu-panel pvp-panel" data-panel="pvpRank" id="pvpRankPanel" hidden></div>
       <div class="menu-panel best-panel" data-panel="bestiary" hidden>
@@ -243,6 +245,14 @@
       </table>
       <p style="margin-top:8px">Tu peux changer les touches dans Options, depuis le menu ou la pause.</p>
       </div>
+    </section>
+    <section>
+      <h2>Nouveau dans la 0.24</h2>
+      <ul>
+        <li>Nouveau mode en test : le Siège du village. Vue du dessus, défends le Cœur du village contre des vagues de monstres (un bélier toutes les 5 vagues). Gagne des niveaux en ramassant les gemmes (une amélioration à choisir) et un objet du puits après chaque vague</li>
+        <li>Seul, à deux sur le même écran (clavier + manette ou deux manettes), ou en coop en ligne jusqu'à 4 avec un salon SIEGE-XXXX</li>
+        <li>Visée à la souris ou au stick droit, attaque auto et visée auto en option (activées d'office au tactile). Relève un allié à terre en restant à côté de lui</li>
+      </ul>
     </section>
     <section>
       <h2>Nouveau dans la 0.23</h2>
@@ -419,6 +429,7 @@
 <script src="js/34-pvp.js"></script>
 <script src="js/35-objets-au-sol.js"></script>
 <script src="js/36-gardiens-zones.js"></script>
+<script src="js/37-siege.js"></script>
 <script src="js/29-demarrage.js"></script>
 </body>
 </html>
