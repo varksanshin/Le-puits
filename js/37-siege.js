@@ -16,7 +16,7 @@ const SG = {
   heartHp: 100, breakTime: 9, firstWave: 3,          // PV du Cœur, durée du répit, attente avant la 1re vague
   playerHp: 6, speed: 92, accel: 1100, iframes: 1.0, revive: 2.5, slots: 6,   // vitesse, accélération (px/s²), emplacements de sorts
   xpBase: 6, xpGrow: 5,                              // expérience du niveau n : xpBase + xpGrow × n
-  finalWave: 25,                                     // la vague du boss final (le Seigneur de la Horde)
+  finalWave: 25, stormEvery: 1.25,                                     // la vague du boss final (le Seigneur de la Horde)
   coopCount: 0.6, coopHp: 0.3, lvCount: 0.03,        // par joueur en plus : +60 % de monstres, +30 % de PV ; +3 % de monstres par niveau d'équipe
   sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
@@ -607,13 +607,14 @@ function sgCastSpells(p, dt, fire) {
   if (LL && cd.eclair <= 0) {
     const t0 = sgNearest(p, 190);
     if (t0) {
-      cd.eclair = 2.2 / (1 + 0.1 * (LL - 1));
+      cd.eclair = 2.2 / (1 + 0.06 * (LL - 1));
       const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 190);
-      for (let c = 0; c < (LL >= 5 ? 2 : 1); c++) sgChain(p, c === 0 ? t0 : near[Math.floor(S_.rand() * near.length)] || t0, 2 + LL, 10 * sgMul(LL), LL >= 5 ? 0.45 : 0);
+      // rebonds : 3 au niveau 1, jusqu'à 7 au niveau 10
+      for (let c = 0; c < (LL >= 5 ? 2 : 1); c++) sgChain(p, c === 0 ? t0 : near[Math.floor(S_.rand() * near.length)] || t0, 2 + Math.ceil(LL / 2), 10 * sgMul(LL), LL >= 5 ? 0.45 : 0);
     }
   }
   if (LL >= 10 && cd.storm <= 0) {
-    cd.storm = 0.32;
+    cd.storm = SG.stormEvery;                 // la Tempête : un éclair du ciel toutes les SG.stormEvery s
     const near = S_.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) < 230);
     if (near.length) sgChain(p, near[Math.floor(S_.rand() * near.length)], 2, 14 * sgMul(LL), 0.2);
   }
