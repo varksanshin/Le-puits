@@ -128,8 +128,16 @@ function sgMakePlayer(i, src, name, pid) {
   p.s = sgBaseStats();
   return p;
 }
+// Bonus cumulables : ils complètent les cartes quand tous les objets (ou toutes les améliorations) sont pris
+const SG_BONUS = [
+  { id: "puissance", name: "Éclat de puissance", desc: "+10 % de dégâts. Cumulable.",            apply: s => { s.dmg *= 1.1; } },
+  { id: "frenesie",  name: "Frénésie",           desc: "Tu attaques 8 % plus vite. Cumulable.",  apply: s => { s.rate *= 1.08; } },
+  { id: "robuste",   name: "Cœur robuste",       desc: "+1 PV max et tous tes PV rendus. Cumulable.", apply: s => { s.maxHp += 1; }, heal: true },
+  { id: "bastion",   name: "Bastion",            desc: "Le Cœur du village : +25 PV max, entièrement réparé.", team: true },
+];
 function sgRecompute(p) {
   const s = sgBaseStats();
+  for (const [id, n] of Object.entries(p.bonus || {})) { const b = SG_BONUS.find(x => x.id === id); if (b && b.apply) for (let k = 0; k < n; k++) b.apply(s); }
   for (const [id, n] of Object.entries(p.upg)) { const u = SG_UPGRADES.find(x => x.id === id); if (u && !u.team) for (let k = 0; k < n; k++) u.apply(s, { hp: 0 }); }
   for (const id of p.items) if (SG_ITEMS[id]) SG_ITEMS[id](s);
   s.maxHp = Math.max(1, s.maxHp);
@@ -185,7 +193,7 @@ function sgReadInput(p) {
     if (bound("left")) I.mx -= 1; if (bound("right")) I.mx += 1; if (bound("up")) I.my -= 1; if (bound("down")) I.my += 1;
     if (typeof touchIn !== "undefined") { I.mx += touchIn.x; if (touchIn.up) I.my -= 1; if (touchIn.down) I.my += 1; if (touchIn.attack) I.fire = true; }
     if (bound("attack") || sgMouse.down) I.fire = true;
-    if (performance.now() - sgMouse.seen < 4000) {
+    if (sgMouse.seen && (!pads.length || performance.now() - sgMouse.seen < 4000)) {
       const wx = siege.cam.x + sgMouse.x, wy = siege.cam.y + sgMouse.y;
       I.ax = wx - p.x; I.ay = wy - p.y; I.aim = true;
     }
@@ -408,10 +416,11 @@ function sgUpdatePlayer(p, dt) {
   if (Math.abs(I.mx) > 0.1) p.face = Math.sign(I.mx);
   p.anim += Math.hypot(I.mx, I.my) * dt * 8;
   // la visée
-  const auto = (p.src === "net" ? p.autoAim : sgAutoAim()) || !I.aim;
+  const auto = p.src === "net" ? p.autoAim : sgAutoAim();
   let target = null;
   if (auto) { target = sgNearest(p, 170); if (target) p.aim = Math.atan2(target.y - p.y, target.x - p.x); else if (Math.hypot(I.mx, I.my) > 0.2) p.aim = Math.atan2(I.my, I.mx); }
-  else p.aim = Math.atan2(I.ay, I.ax);
+  else if (I.aim) p.aim = Math.atan2(I.ay, I.ax);
+  else if (Math.hypot(I.mx, I.my) > 0.2) p.aim = Math.atan2(I.my, I.mx);   // ni souris ni stick : on vise devant soi
   if (Math.abs(Math.cos(p.aim)) > 0.2) p.face = Math.sign(Math.cos(p.aim));
   const fire = I.idle ? false : (p.src === "net" ? p.autoFire : sgAutoFire()) ? !!(target || sgNearest(p, 150)) : I.fire;
   const ux = Math.cos(p.aim), uy = Math.sin(p.aim);
@@ -429,14 +438,14 @@ function sgUpdatePlayer(p, dt) {
   p.swing = Math.max(0, p.swing - dt);
   // le tir magique (amélioration « Tir magique », ou Grimoire)
   const bolts = s.bolt;
-  if (bolts > 0 && p.cd.bolt <= 0 && (fire || sgNearest(p, 160))) {
+  if (bolts > 0 && p.cd.bolt <= 0 && fire) {
     p.cd.bolt = 1.2 / (1 + 0.15 * (bolts - 1));
     const n = 1 + s.multi + Math.floor((bolts - 1) / 2);
     for (let k = 0; k < n; k++) { const a = p.aim + (k - (n - 1) / 2) * 0.18; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { dmg: 8 + 2 * bolts, spd: 230, t: 1.2, pierce: 0 })); }
     if (typeof SFX !== "undefined" && p.src !== "net") SFX.play("bolt");
   }
   // le boomerang
-  if (s.boomer > 0 && p.cd.boomer <= 0) {
+  if (s.boomer > 0 && p.cd.boomer <= 0 && fire) {
     p.cd.boomer = 1.8;
     for (let k = 0; k < s.boomer + Math.floor(s.multi / 2); k++) { const a = p.aim + (k - (s.boomer - 1) / 2) * 0.4; S_.shots.push(sgShot(p, p.x, p.y, Math.cos(a), Math.sin(a), { kind: "boomer", dmg: 9, spd: 190, t: 1.6, r: 4, pierce: 99, back: true })); }
   }
@@ -559,14 +568,25 @@ function sgOptionsFor(p, kind) {
   if (kind === "item") {
     const pool = Object.keys(SG_ITEMS).filter(id => ITEM[id] && !p.items.includes(id));
     const out = []; while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
-    return out.map(id => ({ id: "item:" + id, item: id, name: ITEM[id].name, desc: SG_ITEM_DESC[id] }));
+    return sgFillBonus(p, out.map(id => ({ id: "item:" + id, item: id, name: ITEM[id].name, desc: SG_ITEM_DESC[id] })));
   }
   const pool = SG_UPGRADES.filter(u => (p.upg[u.id] || 0) < u.max);
   const out = []; while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
-  return out.map(u => ({ id: "upg:" + u.id, name: u.name + (p.upg[u.id] ? ` ${p.upg[u.id] + 1}` : ""), desc: u.desc }));
+  return sgFillBonus(p, out.map(u => ({ id: "upg:" + u.id, name: u.name + (p.upg[u.id] ? ` ${p.upg[u.id] + 1}` : ""), desc: u.desc })));
+}
+function sgFillBonus(p, opts) {
+  const pool = SG_BONUS.slice(), r = siege.rand;
+  while (opts.length < 3 && pool.length) { const b = pool.splice(Math.floor(r() * pool.length), 1)[0], n = (p.bonus && p.bonus[b.id]) || 0; opts.push({ id: "bonus:" + b.id, name: b.name + (n ? ` ${n + 1}` : ""), desc: b.desc }); }
+  return opts;
 }
 function sgApply(p, opt) {
   if (opt.startsWith("item:")) { p.items.push(opt.slice(5)); }
+  else if (opt.startsWith("bonus:")) {
+    const b = SG_BONUS.find(x => x.id === opt.slice(6)); if (!b) return;
+    if (b.team) { siege.heart.max += 25; siege.heart.hp = siege.heart.max; }
+    else { p.bonus = p.bonus || {}; p.bonus[b.id] = (p.bonus[b.id] || 0) + 1; }
+    if (b.heal) { sgRecompute(p); p.hp = p.s.maxHp; return; }
+  }
   else { const u = SG_UPGRADES.find(x => x.id === opt.slice(4)); if (!u) return; if (u.team) u.apply(p.s, p); else p.upg[u.id] = (p.upg[u.id] || 0) + 1; }
   const before = p.s.maxHp; sgRecompute(p); if (p.s.maxHp > before) p.hp += p.s.maxHp - before;
 }
@@ -620,6 +640,7 @@ function sgCards(opts) {
   return `<nav class="pvp-cards">${opts.map(o => `<button class="mi pvp-card" data-act="sgPick:${o.id}">${o.item ? `<canvas class="pvp-ic" width="8" height="10" data-icon="${o.item}"></canvas><span class="pvp-card-f">Objet</span>` : `<span class="sg-up">${o.name[0]}</span><span class="pvp-card-f">Amélioration</span>`}<span class="pvp-card-n">${o.name}</span><small>${o.desc}</small></button>`).join("")}</nav>`;
 }
 function sgShowChoice(p, kind, opts, done) {
+  if (!opts || !opts.length) { done(""); return; }   // rien à proposer : on passe
   const el = document.getElementById("siegePanel");
   siege.pickDone = done; siege.pickOpts = opts;
   screen = "siegemenu"; menuRoot = "siege"; document.body.classList.add("pvp-drafting");
