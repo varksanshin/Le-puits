@@ -150,7 +150,7 @@ function hitEnemy(e, dmg, dirX, o) {
     burst(e.x + e.w / 2, e.y + e.h / 2, e.type === "golem" ? 40 : 22, { bat: "#9d6bc4", spitter: "#a05a8a", golem: "#7a7180", wisp: "#8ff0d0" }[e.type] || "#8fae5a", 120);
     if (e.type === "golem") shake(3, 0.25);
     onEnemyKilled(e);
-    if (has("couronne") && Math.random() < 0.3) {
+    if (has("couronne") && Math.random() < 0.05) {      // la Couronne maudite : rarement un autel (plus d'objets en masse sur les monstres)
       pickups.push(makePickup(e.x + e.w / 2 - 5, Math.min(e.y, e.y + e.h - 14)));
       toast("La Couronne maudite fait apparaître un autel…", 1800);
     }

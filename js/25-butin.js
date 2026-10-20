@@ -53,7 +53,7 @@ function dropFromEnemy(e) {
   if (e.boss) { spawnCoins(12 * mult, x, y); spawnLoot("heart", x, y); spawnLoot("heart", x, y); spawnLoot("key", x, y); return; }
   if (e.decoy || e.summonedBy) return;
   if (e.mini) { spawnCoins(8 * mult, x, y); spawnLoot("heart", x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); return; }
-  if (e.type === "mimic") { spawnCoins(5 * mult, x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); if (Math.random() < 0.06 * L) giveRandomItem(x, y); return; }
+  if (e.type === "mimic") { spawnCoins(5 * mult, x, y); if (Math.random() < 0.5) spawnLoot("key", x, y); return; }   // la mimique ne lâche plus d'objet
   if (e.champion && typeof championLoot === "function") championLoot(e, x, y, mult);
   const big = e.type === "golem";
   let n = 0;
@@ -67,8 +67,8 @@ function dropFromEnemy(e) {
 }
 function chestLoot(ch, secret) {
   const x = ch.x + 7, y = ch.y, L = luck();
-  if (secret) { giveRandomItem(x, y); spawnCoins(3, x, y); return; }
-  if (Math.random() < 0.04 * L) { giveRandomItem(x, y); return; }
+  if (secret) { if (Math.random() < 0.5 * L) giveRandomItem(x, y); else { spawnLoot("key", x, y); spawnLoot("heart", x, y); } spawnCoins(4, x, y); return; }
+  // un coffre ordinaire ne contient plus d'objet (seuls les coffres secrets en gardent un)
   spawnCoins(2 + Math.floor(Math.random() * 3), x, y);
   if (Math.random() < 0.45) spawnLoot("heart", x, y);
   if (Math.random() < 0.35 * L) spawnLoot("key", x, y);
@@ -235,7 +235,7 @@ function updateGoldChests(dt) {
     if (keyCount <= 0) { if (!ch.hinted) { ch.hinted = true; toast("Un coffre doré, fermé à clé.", 1800); } continue; }
     addKeys(-1); ch.open = true;
     burst(ch.x + 7, ch.y + 4, 30, "#f2d45a", 120);
-    if (Math.random() < 0.15 * luck()) { giveRandomItem(ch.x + 7, ch.y); spawnCoins(3, ch.x + 7, ch.y); }
+    if (Math.random() < 0.08 * luck()) { giveRandomItem(ch.x + 7, ch.y); spawnCoins(3, ch.x + 7, ch.y); }
     else { spawnCoins(6 + Math.floor(Math.random() * 4), ch.x + 7, ch.y); spawnLoot("heart", ch.x + 7, ch.y); spawnLoot("key", ch.x + 7, ch.y); toast("Le coffre doré déborde de butin !", 2000); }
   }
 }

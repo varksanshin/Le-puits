@@ -17,7 +17,7 @@
 
 const ECO = {
   shuffleStory: true,       // histoire : salles spéciales tirées au sort à chaque partie
-  altarChance: 0.4,        // chance qu'une profondeur garde un autel des ombres
+  altarChance: 0.25,        // chance qu'une profondeur garde un autel des ombres
   altarDark: 10,            // ténèbres payées pour l'objet d'un autel
   merchantChance: 0.85,     // chance qu'un colporteur passe dans une profondeur
   stealDark: 22,            // ténèbres d'un vol

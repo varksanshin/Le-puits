@@ -3,7 +3,7 @@
 /* 1. La touche Action : une petite invite apparaît au-dessus de ce qu'on peut prendre, ouvrir, acheter…
    2. Les objets ne s'ajoutent plus d'un coup : ils tombent au sol avec leur icône. On les ramasse avec Action.
       On apprend ainsi à reconnaître chaque objet à son image.
-   3. Moins d'objets en jeu (les objets « utilitaires » sortent des tirages), mais tous se combinent, comme dans Isaac :
+   3. Tous les objets se combinent, comme dans Isaac :
       - ce qui change les projectiles (Grimoire scindé ×3, Plume de chouette téléguidée, Pointe de diamant perçante,
         Orbe ricochet, Orbe géant) s'applique à TOUS tes projectiles : tirs, lames spectrales, os, éclats, flèches… ;
       - ce qui touche (venin, braise, foudre, sangsue, bourreau, marteau-pilon, pluie d'étoiles…) s'applique aussi
@@ -11,8 +11,7 @@
       Lame spectrale + Grimoire + Chouette + Venin = trois lames fantômes téléguidées et empoisonnées. */
 
 // Les objets qui ne sortent plus dans les tirages (ils restent dans le code : les vieilles sauvegardes les gardent)
-const ITEM_OFF = new Set(["lapin", "trousseau", "bourse", "aimant", "sceau", "fer", "tirelire", "carte", "boussole", "sel",
-  "avarice", "couronne", "oeil", "de", "eaubenite", "lanterne", "sablier", "affamee", "armure", "miroir"]);
+const ITEM_OFF = new Set();   // vide : tous les objets restent dans les tirages (on gagne moins d'objets, mais n'importe lequel peut sortir)
 // Les projectiles qui portent les effets de l'épée (pas les retombées d'effets, pour éviter les réactions en chaîne)
 const PROJ_ONHIT = new Set(["bolt", "blade", "shard", "spark", "arrow"]);
 const PROJ_SHAPE = new Set(["bolt", "blade", "shard", "spark", "arrow", "moon"]);
