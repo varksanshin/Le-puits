@@ -139,7 +139,7 @@ const input = { actionPressed: false, x: 0, up: false, down: false, jump: false,
 const prev = { jump: false, attack: false, dash: false, bolt: false, grapple: false, phase: false, reset: false, pause: false, action: false, up: false };
 /* La touche Action : prendre un objet, ouvrir un coffre, acheter, se reposer…
    Chaque chose avec laquelle on peut interagir se déclare à chaque image avec actOffer(objet, « libellé », à portée ?).
-   La plus proche du héros reçoit l'invite à l'écran ; Action (ou Haut, quand on est devant) la déclenche. */
+   La plus proche du héros reçoit l'invite à l'écran ; seule la touche Action la déclenche. */
 const ACT = { cands: [], focus: null, label: "", pressed: false };
 function actOffer(obj, label, inRange) {
   if (!inRange) return false;
@@ -207,8 +207,8 @@ function readInput() {
   if (dash && !prev.dash) input.dashPressed = true; prev.dash = dash;
   if (bolt && !prev.bolt) input.boltPressed = true; prev.bolt = bolt;
   input.resetPressed = reset && !prev.reset; prev.reset = reset;
-  // Action : la touche dédiée, ou Haut quand quelque chose est à portée (sans frapper)
-  if ((action && !prev.action) || (up && !prev.up && ACT.focus && !attack)) input.actionPressed = true;
+  // Action : seulement la touche dédiée
+  if (action && !prev.action) input.actionPressed = true;          // seulement la touche Action (plus Haut : ça déclenchait sans le vouloir)
   prev.action = action; prev.up = up;
   input.pad = pad;
 }

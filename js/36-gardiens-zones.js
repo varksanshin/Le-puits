@@ -21,6 +21,19 @@ const ZONE_BOSSES = {
 const ZONE_TIER = { entree: 0, mines: 1, noyee: 2, spores: 3, antre: 4, ciel: 4, enfer: 4 };
 const ZONE_HP = [0.62, 0.72, 0.84, 0.95, 1.05];             // part des PV du gardien selon la zone
 
+// Le trajet en ∞ de la Gorgone-Mère : centré sur la salle, posé sur le sol où se trouve le héros
+function gorgoneLoop(m, e) {
+  const p = player, c0 = Math.floor(m.room.x / T), r0 = Math.floor(m.room.y / T);
+  // le sol sous le héros (sinon le bas de la salle)
+  let floorY = (r0 + ROOM_H - 1) * T;
+  for (let r = Math.floor((p.y + p.h - 1) / T); r < r0 + ROOM_H + 2; r++) { const t = tile(Math.floor((p.x + p.w / 2) / T), r); if (solid(t) || t === "-") { floorY = r * T; break; } }
+  const B = 1.3 * T;                                              // demi-hauteur du ∞
+  const cy = floorY - e.h / 2 - 1.2 * T - B;                      // point le plus bas : le bas du monstre ~1 tuile au-dessus du sol
+  const cx = m.room.x + ROOM_W * T / 2;
+  const A = Math.max(2 * T, Math.min(7 * T, ROOM_W * T / 2 - 2 * T - e.w / 2));
+  e.loop = { cx, cy, A, B, u: Math.random() * Math.PI * 2, w: 0.55 };
+  e.homeX = cx - e.w / 2; e.homeY = cy - e.h / 2;
+}
 (() => {
   const around = (name, f) => {
     let orig; try { orig = eval(name); } catch (e) { return; }
@@ -53,7 +66,7 @@ const ZONE_HP = [0.62, 0.72, 0.84, 0.95, 1.05];             // part des PV du ga
     const tier = ZONE_TIER[m.zone] ?? 2, want = ZONE_HP[tier] * (gameMode === "chaos" ? 0.92 : 1);
     const k = want / Math.max(0.01, before);
     e.hp = Math.max(8, Math.round(e.hp * k)); e.maxHp = e.hp;
-    if (e.mini && e.mini.base === "gorgone") { e.homeX = e.x; e.homeY = e.y; e.gazeT = 3; }
+    if (e.mini && e.mini.base === "gorgone") { e.gazeT = 3; gorgoneLoop(m, e); }
     return r;
   });
 })();

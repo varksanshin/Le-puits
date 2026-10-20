@@ -288,6 +288,17 @@ Object.assign(ENEMY_AI, {
       }
       if (e.gazeT <= 0) { e.state = "idle"; e.gazeT = 2.6 + Math.random(); }
     }
+    if (e.loop && !(e.stun > 0 || e.daze > 0)) {
+      // la Gorgone-Mère : elle décrit un ∞ au milieu de la salle, assez bas pour qu'on l'atteigne d'un simple saut
+      // (elle ralentit quand ses yeux s'ouvrent ; elle traverse les plateformes)
+      const L = e.loop, slow = e.state === "wind" || e.state === "gaze" ? 0.35 : 1;
+      L.u += dt * L.w * slow;
+      const tx = L.cx + Math.sin(L.u) * L.A - e.w / 2, ty = L.cy + Math.sin(2 * L.u) * L.B - e.h / 2;
+      e.vx = Math.max(-90, Math.min(90, (tx - e.x) * 4)); e.vy = Math.max(-90, Math.min(90, (ty - e.y) * 4));
+      e.dir = Math.sign(e.vx) || e.dir;
+      e.x += e.vx * dt; e.y += e.vy * dt;
+      return;
+    }
     if (e.stun > 0 || e.daze > 0) { e.vx = approach(e.vx, 0, 200 * dt); e.vy = approach(e.vy, 0, 200 * dt); }
     else {
       const tx = near2(e, p, 200, 120) ? Math.max(-40, Math.min(40, (px - ex) * 0.4)) : (e.homeX - e.x);

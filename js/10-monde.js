@@ -55,7 +55,7 @@ function updateWorld(dt) {
   const p = player;
   if (p.dead) return;
   for (const r of relics) {
-    if (!r.taken && !r.guarded && overlap(p, r)) {
+    if (!r.taken && !r.guarded && actOffer(r, "PRENDRE", overlap(p, r))) {        // touche Action
       r.taken = true; grantSkill(r.skill); recordSplit(RELIC_INFO[r.skill].name);
       freeze = 0.18;
       burst(r.x + 4, r.y + 4, 40, RELIC_INFO[r.skill].color, 140);
@@ -64,7 +64,7 @@ function updateWorld(dt) {
   }
   for (const pk of pickups) {
     pk.t += dt;
-    if (!pk.taken && overlap(p, pk)) {
+    if (!pk.taken && actOffer(pk, "OUVRIR", overlap(p, pk))) {                    // touche Action
       pk.taken = true;
       burst(pk.x + 5, pk.y + 5, 30, "#b48ae0", 120);
       giveRandomItem(pk.x + 5, pk.y);

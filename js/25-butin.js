@@ -230,8 +230,8 @@ function updateGoldChests(dt) {
   const p = player;
   for (const ch of goldChests) {
     if (ch.open) continue;
-    const hit = p.atkTimer > 0 && overlap(attackBox(p.x, p.y), ch);
-    if (!actOffer(ch, "OUVRIR (1 CLE)", overlap(p, ch)) && !hit) { if (!overlap(p, ch)) ch.hinted = false; continue; }
+    // touche Action seulement
+    if (!actOffer(ch, "OUVRIR (1 CLE)", overlap(p, ch))) { if (!overlap(p, ch)) ch.hinted = false; continue; }
     if (keyCount <= 0) { if (!ch.hinted) { ch.hinted = true; toast("Un coffre doré, fermé à clé.", 1800); } continue; }
     addKeys(-1); ch.open = true;
     burst(ch.x + 7, ch.y + 4, 30, "#f2d45a", 120);

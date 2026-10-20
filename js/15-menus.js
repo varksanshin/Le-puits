@@ -94,7 +94,7 @@ function renderControls() {
     ["Grappin", keysFor("grapple"), padLabel(padBinds.grapple)],
     ["Phase", keysFor("phase"), padLabel(padBinds.phase)],
     ["Traverser une planche", `${keysFor("down")} + Sauter`, `Bas + ${padLabel(padBinds.jump)}`],
-    ["Action (prendre, ouvrir, acheter, se reposer)", `${keysFor("action")}, ou Haut devant l'objet`, `${padLabel(padBinds.action)}, ou Haut`],
+    ["Action (prendre, ouvrir, acheter, se reposer)", `${keysFor("action")}`, `${padLabel(padBinds.action)}`],
     ["Recommencer la run", keysFor("reset"), padLabel(padBinds.reset)],
     ["Pause", "Échap", "Start"],
   ];
