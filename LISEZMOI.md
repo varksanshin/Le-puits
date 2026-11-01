@@ -70,6 +70,7 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
                            difficulté dans PR (PV par vague, nombre de monstres, bossK = PV des boss)
   39-bestiaires.js         onglets du bestiaire : Créatures, Gardiens (gardiens de zone + Gardien du fond), Horde (Siège et Prélude)
   40-menus.js              menus à la manette : navigation spatiale, onglets LB/RB, défilement, clavier virtuel, barre d'aide selon l'appareil
+  41-royaumes.js           décors du Royaume céleste (ciel ouvert, nuages, îles) et du Royaume infernal (volcans, lave, forteresse)
   33-synchro.js            synchronise la progression entre appareils (code de reprise, Supabase : cloud_saves)
   32-en-ligne.js           envoie un résumé anonyme de chaque partie à Supabase (projet « le-puits ») pour l'équilibrage
   29-demarrage.js          le démarrage du jeu (toujours le dernier)

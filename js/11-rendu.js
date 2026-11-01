@@ -324,8 +324,9 @@ function draw(a) {
   lctx.setTransform(S, 0, 0, S, 0, 0);
   lctx.globalCompositeOperation = "source-over";
   lctx.clearRect(0, 0, VW, VH);
-  const ambient = bossFight ? 0.62 + 0.25 * dark / 100 : Math.min(0.95, biomeAmbient() + 0.1 * depth + 0.15 * dark / 100);   // l'arène reste lisible
-  lctx.fillStyle = `rgba(6,4,10,${ambient})`; lctx.fillRect(0, 0, VW, VH);
+  let ambient = bossFight ? 0.62 + 0.25 * dark / 100 : Math.min(0.95, biomeAmbient() + 0.1 * depth + 0.15 * dark / 100);   // l'arène reste lisible
+  if (typeof realmAmbient === "function") ambient = realmAmbient(ambient);              // les deux royaumes (js/41-royaumes.js)
+  lctx.fillStyle = `rgba(${(typeof realmTint === "function" && realmTint()) || "6,4,10"},${ambient})`; lctx.fillRect(0, 0, VW, VH);
   lctx.globalCompositeOperation = "destination-out";
   const hole = (x, y, r) => { const g = lctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)"); lctx.fillStyle = g; lctx.fillRect(x - r, y - r, r * 2, r * 2); };
   if (!p.dead) hole(px, py - 8, lightRadius() + Math.sin(time * 9) * 2);
