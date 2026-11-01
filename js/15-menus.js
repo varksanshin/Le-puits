@@ -3,7 +3,8 @@
 // screen : "title" (menu de démarrage), "play" (en jeu) ou "pause"
 let screen = "title", menuPanel = "main", menuRoot = "main";
 const menuEl = $("menu");
-const menuButtons = () => [...menuEl.querySelectorAll(`[data-panel="${menuPanel}"] button:not(:disabled)`)];
+// tout ce qu'on peut sélectionner dans le panneau ouvert : boutons, champs de texte, cartes (tabindex="0")
+const menuButtons = () => [...menuEl.querySelectorAll(`[data-panel="${menuPanel}"] button:not(:disabled):not([hidden]), [data-panel="${menuPanel}"] input:not([type=hidden]), [data-panel="${menuPanel}"] [tabindex="0"]`)].filter(el => el.offsetParent !== null || el === document.activeElement);
 let menuPad = {};
 function showPanel(name) {
   cancelCapture();
@@ -21,6 +22,12 @@ function showPanel(name) {
   const b = menuButtons()[0]; if (b) b.focus({ preventScroll: true });
 }
 const goBack = () => showPanel(menuPanel === "keys" ? "options" : menuRoot);
+// B (manette) : le même « Retour » que le bouton à l'écran (les modes en ligne, le Siège… ont leurs propres retours)
+function menuBack() {
+  if (screen === "pause" && menuPanel === menuRoot) { closeMenu(); return; }
+  if (menuPanel === "main") return;
+  menuAction("back");
+}
 // Déplace la sélection. Dans le tableau des touches, haut et bas restent dans la même colonne.
 function moveFocus(d, vertical) {
   const list = menuButtons(); if (!list.length) return;
@@ -204,8 +211,10 @@ function pollMenuPad() {
     capture.prev = pressed; return;
   }
   if (capture) return;
-  const st = { up: b(12) || ay < -0.5, down: b(13) || ay > 0.5, left: b(14) || ax < -0.5, right: b(15) || ax > 0.5, a: b(0), back: b(1), start: b(9) };
+  const st = { up: b(12) || ay < -0.5, down: b(13) || ay > 0.5, left: b(14) || ax < -0.5, right: b(15) || ax > 0.5, a: b(0), back: b(1), start: b(9), x: b(2), y: b(3), lb: b(4), rb: b(5) };
   const edge = k => st[k] && !menuPad[k];
+  // clavier virtuel, défilement au stick droit, onglets LB/RB, champs de texte : js/40-menus.js
+  if (typeof menuPadHook === "function" && menuPadHook(gp, st, edge)) { menuPad = st; return; }
   if (edge("up")) moveFocus(-1, true);
   if (edge("down")) moveFocus(1, true);
   if (edge("left")) moveFocus(-1);
@@ -215,7 +224,7 @@ function pollMenuPad() {
     if (menuEl.contains(document.activeElement) && document.activeElement.matches("button, [data-act]")) document.activeElement.click();
     else moveFocus(1, true);
   }
-  else if (edge("back")) { if (menuPanel !== menuRoot) goBack(); else if (screen === "pause") closeMenu(); }
+  else if (edge("back")) menuBack();
   else if (edge("start") && screen === "pause") closeMenu();
   menuPad = st;
 }

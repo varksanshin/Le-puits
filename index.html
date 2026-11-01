@@ -12,7 +12,7 @@
 <div class="wrap">
   <header>
     <h1>Le <span>Puits</span></h1>
-    <div class="ver">Moteur · prototype 0.27</div>
+    <div class="ver">Moteur · prototype 0.28</div>
   </header>
 
   <div class="modebar">
@@ -49,20 +49,31 @@
     <div class="menu" id="menu">
       <div class="menu-panel" data-panel="main">
         <div><span class="kicker">Une descente roguelite</span><div class="big">Le <em>Puits</em></div></div>
-        <nav class="menu-list" aria-label="Menu principal">
-          <button class="mi" data-act="continue" hidden>Continuer<small>reprendre la partie sauvegardée</small></button>
-          <button class="mi" data-act="story">Mode histoire</button>
-          <button class="mi" data-act="chaos">Mode chaos<small>nouvelle map à chaque partie</small></button>
-          <button class="mi" data-act="pvp">Duel en ligne<small>draft de 5 objets puis combat contre un joueur</small></button>
-          <button class="mi" data-act="siege">Siège du village<small>nouveau · en test · défends le village, seul ou en coop</small></button>
-          <button class="mi" data-act="daily">Graine du jour<small>la même map pour tout le monde · un seul essai par jour</small></button>
-          <button class="mi" data-act="heritage">Héritage<small>améliorations permanentes</small></button>
-          <button class="mi" data-act="sync">Synchroniser<small>ta progression sur PC et téléphone</small></button>
-          <button class="mi" data-act="bestiary">Bestiaire</button>
-          <button class="mi" data-act="controls">Commandes</button>
-          <button class="mi" data-act="options">Options</button>
-          <button class="mi" data-act="editor">Éditeur de niveau</button>
-        </nav>
+        <div class="menu-groups">
+          <nav class="menu-list tiles hero-tiles" aria-label="Jouer">
+            <button class="mi tile prime" data-act="continue" hidden><i class="ico">▶</i>Continuer<small>reprendre la partie sauvegardée</small></button>
+            <button class="mi tile prime" data-act="story"><i class="ico">◆</i>Mode histoire<small>descendre au fond du Puits</small></button>
+          </nav>
+          <p class="menu-sec">Autres modes</p>
+          <nav class="menu-list tiles" aria-label="Autres modes">
+            <button class="mi tile" data-act="siege"><i class="ico">⚔</i>Mode horde<small>le Prélude et le Siège libre, seul ou en coop</small></button>
+            <button class="mi tile" data-act="chaos"><i class="ico">✦</i>Mode chaos<small>une nouvelle carte à chaque partie</small></button>
+            <button class="mi tile" data-act="daily"><i class="ico">☀</i>Graine du jour<small>la même carte pour tous, un essai par jour</small></button>
+            <button class="mi tile" data-act="pvp"><i class="ico">⚑</i>Duel en ligne<small>draft de 5 objets, puis combat</small></button>
+          </nav>
+          <p class="menu-sec">Progression</p>
+          <nav class="menu-list tiles" aria-label="Progression">
+            <button class="mi tile" data-act="heritage"><i class="ico">♦</i>Héritage<small>améliorations permanentes</small></button>
+            <button class="mi tile" data-act="bestiary"><i class="ico">☠</i>Bestiaire<small>créatures, gardiens, horde</small></button>
+            <button class="mi tile" data-act="sync"><i class="ico">⇄</i>Synchroniser<small>PC et téléphone</small></button>
+          </nav>
+          <p class="menu-sec">Réglages</p>
+          <nav class="menu-list tiles small-tiles" aria-label="Réglages">
+            <button class="mi tile" data-act="options"><i class="ico">⚙</i>Options</button>
+            <button class="mi tile" data-act="controls"><i class="ico">✥</i>Commandes</button>
+            <button class="mi tile" data-act="editor"><i class="ico">✎</i>Éditeur de niveau</button>
+          </nav>
+        </div>
       </div>
       <div class="menu-panel" data-panel="pause" hidden>
         <div class="big small">Pause</div>
@@ -138,7 +149,7 @@
         <p class="bind-msg" id="bindMsg" aria-live="polite">Choisis une case, puis appuie sur la nouvelle touche.</p>
         <nav class="row-list"><button class="mi" data-act="resetBinds">Touches par défaut</button><button class="mi" data-act="back">Retour</button></nav>
       </div>
-      <div class="menu-hint">Flèches ou croix : choisir · Entrée ou A : valider · Échap ou B : retour</div>
+      <div class="menu-hint" id="menuHint">Flèches ou croix : choisir · Entrée ou A : valider · Échap ou B : retour</div>
     </div>
   </div>
   <!-- Commandes tactiles : affichées seulement sur un écran tactile -->
@@ -245,6 +256,16 @@
       </table>
       <p style="margin-top:8px">Tu peux changer les touches dans Options, depuis le menu ou la pause.</p>
       </div>
+    </section>
+    <section>
+      <h2>Nouveau dans la 0.28 · les menus</h2>
+      <ul>
+        <li>Nouveaux menus : panneaux en verre, grandes tuiles pour l'aventure, le mode horde, le chaos, le défi du jour et le duel, rangées par thème (Autres modes, Progression, Réglages)</li>
+        <li>Tous les menus se jouent à la manette : la croix ou le stick pour se déplacer (le curseur suit la disposition à l'écran), A pour valider, B pour revenir en arrière partout, Start pour fermer la pause</li>
+        <li>LB / RB changent d'onglet (bestiaire, Prélude / Siège libre, préréglages d'options) ; le stick droit fait défiler les longues listes</li>
+        <li>Clavier virtuel pour écrire son pseudo et son mot de passe à la manette : A écrit, B efface, Y passe en majuscules, Start termine</li>
+        <li>Une barre d'aide en bas du menu montre les boutons utiles, selon que tu joues au clavier, à la manette ou au tactile</li>
+      </ul>
     </section>
     <section>
       <h2>Nouveau dans la 0.27 · le Prélude</h2>
@@ -473,6 +494,7 @@
 <script src="js/37-siege.js"></script>
 <script src="js/38-prelude.js"></script>
 <script src="js/39-bestiaires.js"></script>
+<script src="js/40-menus.js"></script>
 <script src="js/29-demarrage.js"></script>
 </body>
 </html>

@@ -417,3 +417,107 @@ body.siege-on #hud{display:none}
 .best-tabs .mi{flex:1;padding:6px 8px;border:1px solid rgba(233,225,207,.18);border-radius:8px;text-align:center;font-size:15px}
 .best-tabs .mi.on{border-color:#f2b54a;background:rgba(120,80,20,.35)}
 .best-head{grid-column:1/-1;margin:8px 0 2px;font-family:var(--font-display);font-size:15px;color:#f2d45a}
+
+/* ===================== Menus : nouvelle présentation (0.28) =====================
+   Un panneau en verre fumé à filet doré, qui défile de l'intérieur ; des entrées en lignes avec leur description dessous ;
+   la sélection bien visible (fond, barre de braise) ; des tuiles pour le menu principal ; des interrupteurs pour les options. */
+.menu{overflow:hidden;align-items:stretch;padding:clamp(8px,2.6%,26px) clamp(10px,3.6%,40px);
+  background:linear-gradient(90deg,rgba(9,7,13,.9) 0%,rgba(9,7,13,.62) 48%,rgba(9,7,13,.08) 82%)}
+.menu.pause,.menu.wide{background:rgba(9,7,13,.78)}
+.menu-panel{align-self:center;align-content:start;min-height:0;max-height:100%;overflow:auto;overscroll-behavior:contain;
+  max-width:min(470px,80%);padding:clamp(12px,2.2vw,24px) clamp(14px,2.6vw,28px);gap:clamp(6px,1.3vw,12px);
+  background:linear-gradient(180deg,rgba(30,24,36,.86),rgba(14,11,18,.93));
+  border:1px solid rgba(242,181,74,.22);border-radius:14px;
+  box-shadow:0 18px 50px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,240,210,.07);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  scrollbar-width:thin;scrollbar-color:rgba(242,181,74,.45) transparent}
+.menu-panel::-webkit-scrollbar{width:6px}
+.menu-panel::-webkit-scrollbar-thumb{background:rgba(242,181,74,.45);border-radius:6px}
+.menu-panel[data-panel="main"]{max-width:min(580px,88%)}
+.menu-panel[data-panel="options"]{max-width:min(540px,92%)}
+.menu-panel.best-panel,.menu-panel.keys-panel,.menu-panel.end-panel,.menu-panel.inv-panel,.menu-panel.map-panel{max-width:min(760px,100%)}
+/* le titre et son filet de braise */
+.menu-panel .big{position:relative}
+.menu-panel .big::after{content:"";display:block;width:clamp(40px,8vw,72px);height:2px;margin-top:clamp(5px,1vw,9px);border-radius:2px;background:linear-gradient(90deg,var(--ember),rgba(232,145,58,0))}
+.menu-panel[data-panel="main"] .big{font-size:clamp(34px,7vw,72px)}
+/* les entrées */
+.menu-list{justify-items:stretch;gap:3px}
+.menu-list .mi,.row-list .mi{display:block;width:100%;padding:clamp(5px,.9vw,8px) 12px clamp(5px,.9vw,8px) 15px;border:1px solid transparent;border-radius:9px;
+  font-size:clamp(15px,2.1vw,21px);line-height:1.2;color:var(--bone);transition:background .12s,border-color .12s,transform .12s}
+.menu-list .mi::before,.row-list .mi::before{left:5px;top:22%;bottom:22%;width:3px;height:auto;transform:none;border-radius:2px;background:var(--ember)}
+.menu-list .mi:hover:not(:disabled),.menu-list .mi:focus,.row-list .mi:hover:not(:disabled),.row-list .mi:focus{background:rgba(242,181,74,.1);border-color:rgba(242,181,74,.3);color:#fff;transform:translateX(2px)}
+.mi:focus-visible{text-decoration:none}
+.menu-list .mi small,.row-list .mi small{display:block;margin:2px 0 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(10px,1.25vw,12.5px);
+  letter-spacing:0;text-transform:none;color:var(--ash);line-height:1.3}
+.menu-list .mi:focus small,.menu-list .mi:hover small{color:#cfc5b4}
+.row-list{display:flex;flex-wrap:wrap;gap:6px}
+.row-list .mi{width:auto;flex:1}
+/* la touche « A » à droite de la sélection, quand on joue à la manette */
+body[data-input="pad"] .menu .mi:focus::after{content:"A";position:absolute;right:9px;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:50%;
+  display:grid;place-items:center;background:#3c8a3c;color:#fff;font:700 11px/18px -apple-system,sans-serif;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+body[data-input="pad"] .menu .seg .mi:focus::after,body[data-input="pad"] .menu .best-tabs .mi:focus::after,body[data-input="pad"] .menu .vkb-k:focus::after{content:none}
+/* les sections et les tuiles du menu principal */
+.menu-groups{display:grid;gap:5px}
+.menu-sec{display:flex;align-items:center;gap:8px;margin:7px 0 1px;font-family:var(--font-mono);font-size:clamp(8px,1.05vw,10px);letter-spacing:.2em;text-transform:uppercase;color:var(--ash)}
+.menu-sec::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(233,225,207,.18),rgba(233,225,207,0))}
+.menu-list.tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.menu-list.small-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+.menu-list .mi.tile{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:center;align-content:center;padding:8px 10px;
+  background:rgba(255,255,255,.035);border-color:rgba(233,225,207,.08);font-size:clamp(14px,1.9vw,19px)}
+.menu-list .mi.tile::before{display:none}
+.menu-list .mi.tile small{grid-column:2}
+.tile .ico{grid-row:1/span 2;width:clamp(24px,3.4vw,32px);height:clamp(24px,3.4vw,32px);display:grid;place-items:center;border-radius:8px;
+  background:rgba(242,181,74,.12);color:var(--ember);font-style:normal;font-size:clamp(13px,1.9vw,17px);line-height:1}
+.menu-list .mi.tile:focus,.menu-list .mi.tile:hover{background:rgba(242,181,74,.13);border-color:rgba(242,181,74,.45);transform:translateY(-1px)}
+.menu-list .mi.tile:focus .ico,.menu-list .mi.tile:hover .ico{background:var(--ember);color:#1a1008}
+.menu-list .mi.tile.prime{background:linear-gradient(90deg,rgba(232,145,58,.24),rgba(232,145,58,.06));border-color:rgba(242,181,74,.35);font-size:clamp(16px,2.3vw,23px)}
+.small-tiles .mi.tile{padding:6px 8px;font-size:clamp(12px,1.6vw,16px)}
+.small-tiles .tile .ico{grid-row:auto;width:clamp(20px,2.8vw,26px);height:clamp(20px,2.8vw,26px)}
+body[data-input="pad"] .menu .mi.tile:focus::after{right:7px;top:7px;transform:none}
+/* la pause : deux colonnes */
+.menu-panel[data-panel="pause"] .menu-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+.menu-panel[data-panel="pause"] .menu-list .mi:first-child{grid-column:1/-1;background:rgba(232,145,58,.14);border-color:rgba(242,181,74,.3)}
+/* les options : une ligne par réglage, des interrupteurs à droite */
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px solid rgba(233,225,207,.06)}
+.opt > span{text-transform:none;letter-spacing:0;font-size:clamp(12px,1.6vw,15px);color:var(--bone)}
+.seg{flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.seg .mi{padding:4px 12px;border:1px solid rgba(233,225,207,.2);border-radius:999px;font-size:clamp(12px,1.5vw,14px);color:var(--ash);background:rgba(255,255,255,.03)}
+.seg .mi::before{display:none}
+.seg .mi[aria-pressed="true"],.seg .mi.on{background:rgba(232,145,58,.88);border-color:transparent;color:#1a1008}
+.seg .mi:focus,.seg .mi:hover{outline:2px solid #fff3b8;outline-offset:1px;color:#fff}
+.seg .mi[aria-pressed="true"]:focus,.seg .mi.on:focus{color:#1a1008}
+/* les champs de texte */
+.sync-link input,.menu input[type=text],.menu input[type=password]{width:100%;background:rgba(0,0,0,.38);border:1px solid rgba(233,225,207,.2);border-radius:8px;padding:8px 10px;
+  color:var(--bone);font-family:var(--font-mono);font-size:clamp(12px,1.5vw,14px);outline:none;transition:border-color .12s,box-shadow .12s}
+.sync-link input:focus,.menu input:focus{border-color:var(--ember);box-shadow:0 0 0 3px rgba(232,145,58,.22)}
+body[data-input="pad"] .menu input:focus{box-shadow:0 0 0 3px rgba(232,145,58,.22),0 0 0 1px rgba(232,145,58,.8)}
+body[data-input="pad"] .sync-link{position:relative}
+body[data-input="pad"] .sync-link:focus-within::after{content:"A : écrire";position:absolute;right:8px;top:50%;transform:translateY(-50%);font:600 10px/1 -apple-system,sans-serif;color:#7fd67f;pointer-events:none}
+/* les fiches du bestiaire, parcourables */
+.best{border-radius:9px;padding:4px;border:1px solid transparent}
+.best:focus{outline:none;border-color:rgba(242,181,74,.55);background:rgba(242,181,74,.07)}
+/* la barre d'aide en bas */
+.menu-hint{justify-self:center;align-self:end;background:rgba(9,7,13,.72);border:1px solid rgba(233,225,207,.1);border-radius:999px;padding:4px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.menu-hint kbd{display:inline-block;font-family:var(--font-mono);font-size:.95em;line-height:1.3;padding:0 5px;margin:0 1px;border:1px solid rgba(233,225,207,.3);border-bottom-width:2px;border-radius:4px;color:var(--bone);background:rgba(255,255,255,.04)}
+.menu-hint kbd.pad{border-radius:999px}
+.menu-hint kbd.a{color:#7fd67f;border-color:rgba(127,214,127,.6)}
+.menu-hint kbd.b{color:#e86a6a;border-color:rgba(232,106,106,.6)}
+/* le clavier virtuel (manette) */
+.vkb{position:absolute;left:50%;bottom:clamp(30px,9%,64px);transform:translateX(-50%);z-index:6;width:min(560px,94%);display:grid;gap:5px;padding:10px;
+  background:linear-gradient(180deg,rgba(36,28,42,.97),rgba(16,12,20,.98));border:1px solid rgba(242,181,74,.4);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.vkb-top{display:flex;align-items:center;gap:10px;margin-bottom:3px}
+.vkb-label{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ash);white-space:nowrap}
+.vkb-field{flex:1;min-height:26px;font-family:var(--font-mono);font-size:16px;color:#fff3b8;background:rgba(0,0,0,.45);padding:4px 8px;border-radius:6px;overflow:hidden;white-space:nowrap}
+.vkb-row{display:flex;gap:5px}
+.vkb-k{flex:1;min-width:0;padding:clamp(5px,1vw,8px) 0;border-radius:7px;border:1px solid rgba(233,225,207,.15);background:rgba(255,255,255,.05);color:var(--bone);font:600 clamp(12px,1.6vw,15px)/1 var(--font-mono);cursor:pointer}
+.vkb-k.wide{flex:2.4}
+.vkb-k.on{border-color:var(--ember);color:var(--ember)}
+.vkb-k:focus,.vkb-k:hover{background:var(--ember);color:#1a1008;outline:none}
+@media (max-width:620px){
+  .menu-panel{max-width:100%}
+  .menu-list.small-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .menu-hint{display:none}
+}
+@media (max-width:440px){.menu-list.tiles,.menu-panel[data-panel="pause"] .menu-list{grid-template-columns:1fr}}
+.menu-list.hero-tiles{display:flex;gap:5px}
+.menu-list.hero-tiles .mi.tile{flex:1}
