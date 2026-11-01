@@ -56,7 +56,7 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
   28h-fins.js              les fins : les deux dimensions (céleste et infernale), les fins alternatives et les scènes de fin animées
   28i-economie.js          l'économie à la Isaac : butin des gardiens, autels des ombres, colporteur, tripot, prison et compagnons,
                            salles spéciales tirées au sort en histoire, champions et renfort des monstres en profondeur
-  30-musique.js            la musique 16-bits générée en direct
+  30-musique.js            la musique 16-bits : 15 thèmes longs (aventure + horde), écrits en degrés et accords, nappes, réverb, harmonies
   31-sons.js               les bruitages générés en direct (héros, combat, monstres, butin, gardiens)
   34-pvp.js                le duel en ligne : pseudo, recherche d'adversaire, draft, arène, manches, classement (Supabase Realtime)
   vendor/supabase.js       la bibliothèque Supabase (chargée seulement quand on ouvre le duel)

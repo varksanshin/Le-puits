@@ -175,7 +175,7 @@ function syncOptions() {
   $("optShake").setAttribute("aria-pressed", String(shakeOn));
   $("optMini").textContent = miniMapOn ? "Affichée" : "Masquée"; $("optMini").setAttribute("aria-pressed", String(miniMapOn));
   if (typeof SFX !== "undefined") { $("optSfx").textContent = SFX.isOn() ? "Activés" : "Coupés"; $("optSfx").setAttribute("aria-pressed", String(SFX.isOn())); }
-  if (typeof MUSIC !== "undefined") { $("optMusic").textContent = MUSIC.isOn() ? "Activée" : "Coupée"; $("optMusic").setAttribute("aria-pressed", String(MUSIC.isOn())); }
+  if (typeof MUSIC !== "undefined") { $("optMusic").textContent = MUSIC.label ? MUSIC.label() : MUSIC.isOn() ? "Activée" : "Coupée"; $("optMusic").setAttribute("aria-pressed", String(MUSIC.isOn())); }
 }
 menuEl.addEventListener("click", e => {
   const s = e.target.closest("[data-bind]");
