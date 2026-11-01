@@ -19,7 +19,7 @@ const SG = {
   finalWave: 25, stormEvery: 1.25,
   lateWave: 15, lateHp: 0.12, lateCount: 0.06,      // à partir de la vague 15 : +12 % de PV et +6 % de monstres par vague en plus                                     // la vague du boss final (le Seigneur de la Horde)
   coopCount: 0.6, coopHp: 0.3, lvCount: 0.03,        // par joueur en plus : +60 % de monstres, +30 % de PV ; +3 % de monstres par niveau d'équipe
-  netV: 4,                                           // version du protocole en ligne : tous les joueurs d'un salon doivent avoir la même
+  netV: 5,                                           // version du protocole en ligne : tous les joueurs d'un salon doivent avoir la même
   sendHz: 15, inHz: 20, pickWait: 30,             // en ligne : délai max pour qu'un allié choisisse
 };
 const SG_ENEMIES = {
@@ -125,7 +125,9 @@ const sgAutoAim = () => sgOpts.autoAim ?? (typeof isTouch !== "undefined" && isT
 const sgSaveOpts = () => { try { localStorage.setItem("lepuits.siege.opts", JSON.stringify(sgOpts)); } catch (e) {} };
 
 // ===== La carte =====
-function sgBuildMap(seed) {
+// Les décors : « village » (ci-dessous) ; château, forêt et puits viennent du Prélude (js/38-prelude.js, PR_THEMES)
+function sgBuildMap(seed, theme) {
+  if (theme && theme !== "village" && typeof PR_THEMES !== "undefined" && PR_THEMES[theme]) { const m = PR_THEMES[theme].build(seed); m.theme = theme; m.seed = seed; return m; }
   const rand = rng(seed || 1), W = SG.W, H = SG.H, cx = W / 2, cy = H / 2;
   const g = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => (r === 0 || c === 0 || r === H - 1 || c === W - 1) ? "#" : "."));
   // la palissade, percée de quatre portes
@@ -155,8 +157,9 @@ function sgBuildMap(seed) {
     if (d < SG.ringR + 2.5 || Math.abs(c + 0.5 - cx) < 3 || Math.abs(r + 0.5 - cy) < 3) continue;
     if (rand() < 0.035) g[r][c] = rand() < 0.7 ? "T" : "R";
   }
-  return { g, houses, W, H, heart: { x: cx * T, y: cy * T } };
+  return { g, houses, W, H, heart: { x: cx * T, y: cy * T }, theme: "village", seed, ring: true, heartName: "COEUR DU VILLAGE" };
 }
+const sgTheme = m => (m && m.theme && m.theme !== "village" && typeof PR_THEMES !== "undefined" && PR_THEMES[m.theme]) || null;
 // fly = true (vole : seuls les bords arrêtent) ou "ghost" (un monstre coincé trop longtemps passe arbres et maisons, pas la palissade)
 const sgSolid = (m, c, r, fly) => { const t = m.g[r] && m.g[r][c]; return t === undefined || t === "#" || (!fly && t !== ".") || (fly === "ghost" && t === "W"); };
 function sgMove(m, o, dx, dy, fly) {
@@ -205,7 +208,7 @@ function sgRecompute(p) {
 function siegeStart(o = {}) {
   const seed = o.seed || Math.floor(Math.random() * 1e9);
   siege = {
-    seed, rand: rng(seed ^ 0x51E6E), map: sgBuildMap(seed), net: o.net || null, host: o.host !== false,
+    seed, rand: rng(seed ^ 0x51E6E), map: sgBuildMap(seed, o.theme), net: o.net || null, host: o.host !== false, camp: o.camp || null,
     wave: 0, phase: "prep", phaseT: SG.firstWave, toSpawn: 0, spawnT: 0, enemies: [], shots: [], foeShots: [], gems: [], fx: [], nums: [], zones: [],
     level: 1, xp: 0, kills: 0, time: 0, players: [], heart: { hp: SG.heartHp, max: SG.heartHp, hitT: 0 }, nextId: 1, over: null,
     choice: null, cam: { x: 0, y: 0 }, running: true, paused: false, lastSnap: 0, remote: null,
@@ -216,7 +219,7 @@ function siegeStart(o = {}) {
   const h = siege.map.heart; siege.cam.x = h.x - VW / 2; siege.cam.y = h.y - VH / 2;
   menuEl.hidden = true; $("hud").hidden = true; screen = "play"; mode = "play";
   document.body.classList.add("siege-on");
-  if (siege.host) toast("Défends le Cœur du village ! La première vague arrive…", 3200);
+  if (siege.host && !siege.camp) toast("Défends le Cœur du village ! La première vague arrive…", 3200);
   try { cv.focus({ preventScroll: true }); } catch (e) {}
 }
 function siegeStop() {
@@ -274,7 +277,10 @@ function siegeUpdate(dt) {
   if (S_.phase === "prep" && S_.phaseT <= 0) sgStartWave();
   if (S_.phase === "wave") {
     S_.spawnT -= dt;
-    while (S_.toSpawn > 0 && S_.spawnT <= 0) { S_.spawnT += Math.max(0.12, 1.1 - S_.wave * 0.06) * (0.6 + S_.rand() * 0.8); sgSpawn(); }
+    // si plus rien ne meurt depuis 25 s alors qu'il ne reste que quelques monstres, ils foncent (fantômes) vers le Cœur
+    if (S_.kills !== S_.lastKills) { S_.lastKills = S_.kills; S_.calmT = 0; } else S_.calmT = (S_.calmT || 0) + dt;
+    if (S_.toSpawn <= 0 && S_.calmT > 20) for (const e of S_.enemies) if (!e.rush) { e.rush = true; e.bestT = 99; }
+    while (S_.toSpawn > 0 && S_.spawnT <= 0) { S_.spawnT += Math.max(0.12, 1.1 - (S_.camp ? S_.dw * 0.8 : S_.wave) * 0.06) * (0.6 + S_.rand() * 0.8); sgSpawn(); }
     if (S_.toSpawn <= 0 && !S_.enemies.length) sgEndWave();
   }
   for (const p of S_.players) sgUpdatePlayer(p, dt);
@@ -291,7 +297,7 @@ function siegeUpdate(dt) {
   S_.heart.cd = (S_.heart.cd || 0) - dt;
   if (S_.heart.cd <= 0) {
     const h = S_.map.heart, e = sgNearestPt(h.x, h.y, 95);
-    if (e) { S_.heart.cd = 1.4; const d = Math.hypot(e.x - h.x, e.y - h.y) || 1; S_.shots.push({ owner: -1, kind: "ember", x: h.x, y: h.y - 8, vx: (e.x - h.x) / d * 200, vy: (e.y - h.y + 8) / d * 200, t: 0.6, r: 2.5, dmg: 6 + S_.wave, pierce: 0, bounce: 0, hit: new Set(), age: 0 }); }
+    if (e) { S_.heart.cd = 1.4; const d = Math.hypot(e.x - h.x, e.y - h.y) || 1; S_.shots.push({ owner: -1, kind: "ember", x: h.x, y: h.y - 8, vx: (e.x - h.x) / d * 200, vy: (e.y - h.y + 8) / d * 200, t: 0.6, r: 2.5, dmg: 6 + (S_.camp ? S_.dw : S_.wave), pierce: 0, bounce: 0, hit: new Set(), age: 0 }); }
   }
   // défaite
   if (S_.heart.hp <= 0) return sgGameOver("Le Cœur du village est tombé.");
@@ -301,6 +307,7 @@ function siegeUpdate(dt) {
 }
 function sgStartWave() {
   const S_ = siege;
+  if (S_.camp) return prStartWave();
   S_.wave++; S_.phase = "wave";
   const n = S_.players.length, lord = S_.wave === SG.finalWave || (S_.endless && S_.wave > SG.finalWave && S_.wave % 10 === 0);
   const boss = !lord && S_.wave % 5 === 0;
@@ -329,8 +336,9 @@ function sgSpawn(force) {
   if (force) {}
   else if (S_.bossLeft > 0 && S_.toSpawn <= 1 + S_.players.length) { type = "belier"; S_.bossLeft--; }
   else {
-    const pool = Object.entries(SG_ENEMIES).filter(([, d]) => d.from <= w);
-    const weights = pool.map(([k]) => k === "crawler" ? 4 : k === "bat" ? 3 : k === "golem" ? 1 : 2);
+    // (prélude : les monstres de la région, selon la difficulté du chapitre)
+    const pool = S_.camp ? prRoster() : Object.entries(SG_ENEMIES).filter(([, d]) => d.from <= w);
+    const weights = pool.map(([k, , wt]) => wt || (k === "crawler" ? 4 : k === "bat" ? 3 : k === "golem" ? 1 : 2));
     let x = S_.rand() * weights.reduce((a, b) => a + b, 0);
     type = pool[0][0];
     for (let i = 0; i < pool.length; i++) { x -= weights[i]; if (x <= 0) { type = pool[i][0]; break; } }
@@ -343,10 +351,11 @@ function sgSpawn(force) {
     const an = S_.rand() * Math.PI * 2, rd = 250 + S_.rand() * 110;
     x = Math.max(2 * T, Math.min((m.W - 3) * T, h.x + Math.cos(an) * rd));
     y = Math.max(2 * T, Math.min((m.H - 3) * T, h.y + Math.sin(an) * rd * 0.75));
-    if (!sgSolid(m, Math.floor(x / T), Math.floor(y / T), d.fly) && Math.hypot(x - h.x, (y - h.y) * 1.15) > SG.ringR * T + 30) break;
+    const outside = m.inside ? !m.inside(x, y, 30) : m.ring === false ? Math.hypot(x - h.x, y - h.y) > 200 : Math.hypot(x - h.x, (y - h.y) * 1.15) > SG.ringR * T + 30;
+    if (!sgSolid(m, Math.floor(x / T), Math.floor(y / T), d.fly) && outside) break;
   }
-  const n = S_.players.length, late = d.lord ? 0 : Math.max(0, w - SG.lateWave + 1), mult = (1 + 0.16 * (w - 1)) * (1 + SG.lateHp * late) * (1 + SG.coopHp * (n - 1)) * (d.boss ? 1 + 0.5 * (n - 1) : 1) * (d.lord && S_.endless ? 1 + 0.5 * Math.floor((w - SG.finalWave) / 10) : 1);
-  const e = { id: S_.nextId++, type, x, y, r: d.r * (d.scale || 1), hp: d.hp * mult, max: d.hp * mult, spd: d.spd * (1 + Math.min(0.5, w * 0.02)) * (0.9 + S_.rand() * 0.2),
+  const n = S_.players.length, late = d.lord ? 0 : Math.max(0, w - SG.lateWave + 1), mult = S_.camp ? prHpMult(d, n) : (1 + 0.16 * (w - 1)) * (1 + SG.lateHp * late) * (1 + SG.coopHp * (n - 1)) * (d.boss ? 1 + 0.5 * (n - 1) : 1) * (d.lord && S_.endless ? 1 + 0.5 * Math.floor((w - SG.finalWave) / 10) : 1);
+  const e = { id: S_.nextId++, type, x, y, r: d.r * (d.scale || 1), hp: d.hp * mult, max: d.hp * mult, spd: d.spd * (1 + Math.min(0.5, (S_.camp ? S_.dw : w) * 0.02)) * (0.9 + S_.rand() * 0.2),
     cd: 0, flash: 0, burn: 0, poison: 0, stuck: 0, lx: x, ly: y, t: S_.rand() * 6, kb: { x: 0, y: 0 }, hit: {} };
   S_.enemies.push(e); if (!force) S_.toSpawn--;
 }
@@ -354,8 +363,8 @@ function sgSpawn(force) {
 //   onde de choc (une couronne de projectiles), invocation (des monstres autour de lui) ou charge vers un héros.
 //   Sous la moitié de ses PV, il enrage : attaques plus rapprochées, onde plus dense.
 function sgLord(e, dt) {
-  const S_ = siege, rage = e.hp < e.max * 0.5;
-  if (rage && !e.raged) { e.raged = true; toast("Le Seigneur de la Horde enrage !", 2200, true); shake(3, 0.4); }
+  const S_ = siege, rage = e.hp < e.max * 0.5, D = SG_ENEMIES[e.type];
+  if (rage && !e.raged) { e.raged = true; toast(`${D.name || "Le Seigneur de la Horde"} enrage !`, 2200, true); shake(3, 0.4); }
   e.atkT = (e.atkT ?? 3) - dt;
   if (e.chargeT > 0) e.chargeT -= dt;
   if (e.windT > 0) {
@@ -366,9 +375,19 @@ function sgLord(e, dt) {
         const k = rage ? 22 : 14;
         for (let i = 0; i < k; i++) { const a = i / k * Math.PI * 2 + e.t; S_.foeShots.push({ x: e.x, y: e.y, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, t: 3, r: 4, dmg: 1, heart: 3, big: true }); }
         S_.fx.push({ kind: "boom", x: e.x, y: e.y, t: 0.4, r: 40, c: "#c4413b" }); shake(2.5, 0.25);
+      } else if (e.next === "fan") {
+        // une salve en éventail vers le héros le plus proche
+        let tg = null, bd = 1e9; for (const p of S_.players) if (!p.down) { const dd = Math.hypot(p.x - e.x, p.y - e.y); if (dd < bd) { bd = dd; tg = p; } }
+        const a0 = tg ? Math.atan2(tg.y - e.y, tg.x - e.x) : Math.atan2(S_.map.heart.y - e.y, S_.map.heart.x - e.x), k = rage ? 9 : 6;
+        for (let i = 0; i < k; i++) { const a = a0 + (i - (k - 1) / 2) * 0.16; S_.foeShots.push({ x: e.x, y: e.y, vx: Math.cos(a) * 125, vy: Math.sin(a) * 125, t: 2.6, r: 3.5, dmg: 1, heart: 2, big: true }); }
+      } else if (e.next === "howl") {
+        // un hurlement : tous les monstres alentour s'élancent
+        for (const o of S_.enemies) if (o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 200) { o.lungeT = 0.5; o.cd = 0; }
+        S_.fx.push({ kind: "nova", x: e.x, y: e.y, t: 0.35, r: 120, c: "#c4413b" }); shake(2, 0.3);
       } else if (e.next === "summon") {
+        const kinds = D.summon || ["crawler", "bat", "wisp", "rodeur"];
         for (let i = 0; i < 3 + 2 * n + (rage ? 3 : 0); i++) {
-          const before = S_.enemies.length; sgSpawn(["crawler", "bat", "wisp", "rodeur"][i % 4]);
+          const before = S_.enemies.length; sgSpawn(kinds[i % kinds.length]);
           const m2 = S_.enemies[before]; if (m2) { const a = i * 1.3; m2.x = e.x + Math.cos(a) * 30; m2.y = e.y + Math.sin(a) * 24; if (sgSolid(S_.map, Math.floor(m2.x / T), Math.floor(m2.y / T), false)) { m2.x = e.x; m2.y = e.y; } }
         }
         S_.fx.push({ kind: "ring", x: e.x, y: e.y, t: 0.3, c: "#c88aff", r: 40 });
@@ -378,7 +397,8 @@ function sgLord(e, dt) {
   }
   if (e.atkT <= 0) {
     e.atkT = rage ? 2.4 : 3.6; e.windT = 0.7;
-    const opts = ["slam", "summon", "charge"]; e.next = opts[(e.atkN = (e.atkN || 0) + 1) % 3];
+    const opts = D.atk || ["slam", "summon", "charge"]; e.next = opts[(e.atkN = (e.atkN || 0) + 1) % opts.length];
+    if (D.every) e.atkT = rage ? D.every * 0.66 : D.every;
     S_.fx.push({ kind: "ring", x: e.x, y: e.y, t: 0.3, c: "#e0453c", r: 46 });
   }
 }
@@ -401,7 +421,13 @@ function sgContinue() {
   if (S_.net && S_.host) S_.net.send("cont", {});
   sgResume(); toast("Mode infini : la horde ne s'arrête plus.", 2600, true);
 }
-const sgGates = () => { const h = siege.map.heart, R = SG.ringR * T; return [[h.x, h.y - R / 1.15], [h.x + R, h.y], [h.x, h.y + R / 1.15], [h.x - R, h.y]]; };
+// la ligne entre deux points est-elle dégagée (pas de mur, de maison, d'arbre…) ?
+function sgSees(m, x0, y0, x1, y1) {
+  const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 6);
+  for (let i = 1; i < n; i++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n, t = m.g[Math.floor(y / T)] && m.g[Math.floor(y / T)][Math.floor(x / T)]; if (t !== "." && t !== undefined && Math.hypot(x - x1, y - y1) > 12) return false; }
+  return true;
+}
+const sgGates = () => { if (siege.map.gates) return siege.map.gates; const h = siege.map.heart, R = SG.ringR * T; return [[h.x, h.y - R / 1.15], [h.x + R, h.y], [h.x, h.y + R / 1.15], [h.x - R, h.y]]; };
 function sgUpdateEnemies(dt) {
   const S_ = siege, m = S_.map, h = m.heart;
   for (const e of S_.enemies) {
@@ -415,22 +441,32 @@ function sgUpdateEnemies(dt) {
     // la cible : le joueur le plus proche s'il est tout près, sinon le Cœur (en passant par une porte)
     // (seulement un joueur du même côté de la palissade, sinon il resterait collé au mur ; et s'il bute trop longtemps, il lâche l'affaire)
     let tx = h.x, ty = h.y, target = null, bd = d.lord ? 150 : d.boss || e.ignoreT > 0 ? 0 : 75;
-    const RR = SG.ringR * T, inRing = (x, y) => Math.hypot(x - h.x, (y - h.y) * 1.15) < RR;
+    const RR = SG.ringR * T, inRing = m.ring === false ? () => false : m.inside ? (x, y) => m.inside(x, y, 0) : (x, y) => Math.hypot(x - h.x, (y - h.y) * 1.15) < RR;
     if (e.ignoreT > 0) e.ignoreT -= dt;
     for (const p of S_.players) if (!p.down && (d.fly || inRing(p.x, p.y) === inRing(e.x, e.y))) { const dd = Math.hypot(p.x - e.x, p.y - e.y); if (dd < bd) { bd = dd; target = p; } }
     if (target) { e.chaseT = Math.max(0, (e.chaseT || 0) + (e.stuck > 0.2 || e.detourT > 0 ? dt : -dt * 0.5)); if (e.chaseT > 2.5) { e.chaseT = 0; e.ignoreT = 4; target = null; } } else e.chaseT = 0;
     if (target) { tx = target.x; ty = target.y; }
-    else if (!d.fly) {
+    else if (!d.fly && m.ring !== false) {
       const R = SG.ringR * T, dh = Math.hypot(e.x - h.x, (e.y - h.y) * 1.15);
-      if (dh > R + 10) { let g = null, gd = 1e9; for (const [gx, gy] of sgGates()) { const q = Math.hypot(gx - e.x, gy - e.y); if (q < gd) { gd = q; g = [gx, gy]; } } if (g) { tx = g[0] + (g[0] - h.x) * 0.04; ty = g[1] + (g[1] - h.y) * 0.04; if (gd < 26) { tx = h.x; ty = h.y; } } }
+      if (m.inside ? !m.inside(e.x, e.y, 10) : dh > R + 10) { let g = null, gd = 1e9; for (const [gx, gy] of sgGates()) { const q = Math.hypot(gx - e.x, gy - e.y); if (q < gd) { gd = q; g = [gx, gy]; } }
+        if (g) {
+          // d'abord se placer bien en face de la porte (dehors), puis la passer tout droit
+          const nl = Math.hypot(g[0] - h.x, g[1] - h.y) || 1, nx = (g[0] - h.x) / nl, ny = (g[1] - h.y) / nl;
+          const rx = e.x - g[0], ry = e.y - g[1], along = rx * nx + ry * ny, off = Math.abs(rx * ny - ry * nx);
+          if (off < 6 && along < 40) { tx = g[0] - nx * 30; ty = g[1] - ny * 30; }
+          else { const k = Math.max(16, Math.min(40, along)); tx = g[0] + nx * k; ty = g[1] + ny * k; }
+        } }
     }
     const dx = tx - e.x, dy = ty - e.y, dist = Math.hypot(dx, dy) || 1;
-    // tireur : il garde ses distances
+    // tireur : il garde ses distances… seulement s'il voit sa cible (sinon il avance : un mur ne l'arrête pas pour toujours)
     let want = 1;
-    if (d.ranged && dist < 90) want = dist < 60 ? -0.6 : 0;
-    if (d.ranged && dist < 130 && e.cd <= 0) {
+    // (la vraie cible — un héros ou le Cœur —, pas le point de passage vers une porte)
+    const ax = target ? target.x : h.x, ay = target ? target.y : h.y, adx = ax - e.x, ady = ay - e.y, adist = Math.hypot(adx, ady) || 1;
+    const sees = d.ranged && adist < 130 && !e.rush && sgSees(m, e.x, e.y, ax, ay);
+    if (sees && adist < 90) want = adist < 60 ? -0.6 : 0;
+    if (sees && e.cd <= 0) {
       e.cd = 2.4; const sp = 110;
-      S_.foeShots.push({ x: e.x, y: e.y, vx: dx / dist * sp, vy: dy / dist * sp, t: 2.5, r: 3, dmg: 1, heart: 2 });
+      S_.foeShots.push({ x: e.x, y: e.y, vx: adx / adist * sp, vy: ady / adist * sp, t: 2.5, r: 3, dmg: 1, heart: 2 });
     }
     // rôdeur : il bondit
     if (d.lunge && dist < 70 && e.cd <= 0 && !e.lungeT) { e.lungeT = 0.35; e.cd = 2; }
@@ -442,7 +478,8 @@ function sgUpdateEnemies(dt) {
     // s'il ne se rapproche plus du Cœur depuis longtemps, il finit par se faufiler
     const dh0 = Math.hypot(e.x - h.x, e.y - h.y);
     if (dh0 < (e.bestD ?? 1e9) - 4) { e.bestD = dh0; e.bestT = 0; } else if (!target && !atHeart) e.bestT = (e.bestT || 0) + dt;
-    const mode = d.fly ? true : e.bestT > 6 ? "ghost" : false;
+    // coincé longtemps : il se faufile (6 s : à travers arbres et maisons ; 12 s : partout, dernier recours)
+    const mode = d.fly || e.bestT > 12 ? true : e.bestT > 6 || m.thick ? "ghost" : false;     // (forêt : ils se faufilent entre les arbres)
     if (atHeart) sp = 0;
     let mx = dx / dist * sp * dt + e.kb.x * dt, my = dy / dist * sp * dt + e.kb.y * dt;
     e.kb.x *= Math.pow(0.02, dt); e.kb.y *= Math.pow(0.02, dt);
@@ -508,7 +545,7 @@ function sgKill(e, p) {
   const fp = S_.players.find(q => sgLv(q, "feu") >= 5);
   if (e.burn > 0 && fp) { sgAoe(e.x, e.y, 22 * fp.s.area, 8 * sgMul(sgLv(fp, "feu")) * fp.s.dmg, fp, { dot: true, burn: 1.5 }); S_.fx.push({ kind: "boom", x: e.x, y: e.y, t: 0.3, r: 22 * fp.s.area, c: "#e8913a" }); }
   if (p && p.s.moon) for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; S_.shots.push(sgShot(p, e.x, e.y, Math.cos(a), Math.sin(a), { kind: "moon", dmg: 6, spd: 170, t: 0.5, r: 2.5, pierce: 0, noMods: true })); }
-  if (d.lord) { sgVictory(); return; }
+  if (d.lord) { if (S_.camp) prBossDown(e); else sgVictory(); return; }
   if (d.boss) toast("Le Bélier est abattu !", 2000);
 }
 
@@ -787,9 +824,10 @@ function sgCamera(dt) {
 }
 function sgGameOver(why) {
   const S_ = siege;
-  S_.over = { why, wave: S_.wave, kills: S_.kills, level: S_.level, time: S_.time };
+  if (S_.camp) why = why.replace("Cœur du village", S_.map.heartWord || "Cœur du village");
+  S_.over = { why, wave: S_.wave, kills: S_.kills, level: S_.level, time: S_.time, camp: S_.camp ? S_.camp.ch : null };
   let best = 0; try { best = +localStorage.getItem("lepuits.siege.best") || 0; } catch (e) {}
-  if (S_.wave > best) try { localStorage.setItem("lepuits.siege.best", String(S_.wave)); } catch (e) {}
+  if (S_.wave > best && !S_.camp) try { localStorage.setItem("lepuits.siege.best", String(S_.wave)); } catch (e) {}
   S_.over.best = Math.max(best, S_.wave);
   if (S_.net && S_.host) S_.net.send("end", S_.over);
   if (typeof SFX !== "undefined") SFX.play("death");
@@ -814,7 +852,7 @@ function sgOptionsFor(p, kind) {
   const S_ = siege, r = S_.rand;
   if (kind === "item") {
     // trois objets ; la rareté se tire pour chaque carte (plus de belles raretés au fil des vagues, une épique garantie toutes les 5 vagues)
-    const sh = Math.min(1, S_.wave / 20), W = { commun: 55 - 25 * sh, rare: 30 + 5 * sh, epique: 12 + 12 * sh, legendaire: 3 + 8 * sh };
+    const wv = S_.camp ? S_.dw * 0.45 : S_.wave, sh = Math.min(1, wv / 20), W = { commun: 55 - 25 * sh, rare: 30 + 5 * sh, epique: 12 + 12 * sh, legendaire: 3 + 8 * sh };
     const order = ["commun", "rare", "epique", "legendaire"], out = [], used = new Set();
     const ok = id => {
       if (used.has(id) || !ITEM[id]) return false;
@@ -824,7 +862,7 @@ function sgOptionsFor(p, kind) {
     for (let k = 0; k < 3; k++) {
       let x = r() * order.reduce((a, o) => a + W[o], 0), rar = "commun";
       for (const o of order) { x -= W[o]; if (x <= 0) { rar = o; break; } }
-      if (k === 0 && S_.wave % 5 === 0 && order.indexOf(rar) < 2) rar = "epique";
+      if (k === 0 && (S_.camp ? S_.bossLoot : S_.wave % 5 === 0) && order.indexOf(rar) < 2) rar = "epique";
       // si la rareté tirée n'a plus rien, on essaie la plus proche
       let pick = null;
       for (const o of [rar, ...order.slice().sort((a, b) => Math.abs(order.indexOf(a) - order.indexOf(rar)) - Math.abs(order.indexOf(b) - order.indexOf(rar)))]) {
@@ -955,6 +993,7 @@ function sgShowWait() {
   showPanel("siege");
 }
 function sgShowEnd() {
+  if (siege.camp && typeof prShowEnd === "function") return prShowEnd();
   const o = siege.over, el = document.getElementById("siegePanel");
   screen = "siegemenu"; menuRoot = "siege"; document.body.classList.remove("pvp-drafting");
   el.innerHTML = `<div><span class="kicker">Siège du village</span><div class="big small">${o.why}</div></div>
@@ -970,6 +1009,7 @@ function sgShowEnd() {
 const sgHash = (c, r, k = 0) => { let h = (c * 374761393 + r * 668265263 + k * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 function sgGround(m) {
   if (m.groundCv) return m.groundCv;
+  const th = sgTheme(m); if (th && th.ground) return (m.groundCv = th.ground(m));
   const cvs = document.createElement("canvas"); cvs.width = m.W * T; cvs.height = m.H * T;
   const g = cvs.getContext("2d"); if (!g) return null;
   const cx = m.W / 2, cy = m.H / 2;
@@ -1004,6 +1044,7 @@ function sgGround(m) {
 // les éléments du décor qui ont une hauteur (triés avec les personnages)
 function sgProps(m) {
   if (m.props) return m.props;
+  const th = sgTheme(m); if (th && th.props) return (m.props = th.props(m));
   const out = [];
   for (let r = 0; r < m.H; r++) for (let c = 0; c < m.W; c++) {
     const t = m.g[r][c];
@@ -1018,6 +1059,7 @@ const sgPx = v => Math.round(v * S) / S;
 function sgDrawProp(o, ox, oy) {
   const x = sgPx(o.x - ox), y = sgPx(o.y - oy);
   if (x < -60 || x > VW + 60 || y < -20 || y > VH + 70) return;
+  if (typeof PR_PROPS !== "undefined" && PR_PROPS[o.kind]) return PR_PROPS[o.kind].draw(o, x, y);
   const sh = (w, h) => { ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2); ctx.fill(); };
   if (o.kind === "tree") {
     sh(9, 3);
@@ -1079,12 +1121,15 @@ function siegeDraw() {
   }
   // le Cœur du village : un brasier sur un autel de pierre
   const hx = sgPx(h.x - ox), hy = sgPx(h.y - oy), k = 0.5 + 0.5 * Math.sin(time * 5);
+  const thm = sgTheme(m), hit = S_.heart.hitT > 0;
+  if (thm && thm.heart) thm.heart(hx, hy, hit, k);
+  else {
   ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(hx, hy + 6, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#3e3a46"; ctx.fillRect(hx - 10, hy - 3, 20, 10); ctx.fillStyle = "#5a5664"; ctx.fillRect(hx - 10, hy - 3, 20, 3); ctx.fillStyle = "#77738a"; ctx.fillRect(hx - 9, hy - 3, 18, 1);
   ctx.fillStyle = "#2a1a10"; ctx.fillRect(hx - 7, hy - 5, 14, 3);
-  const hit = S_.heart.hitT > 0;
   for (let j = 0; j < 7; j++) { const ph = (time * 1.6 + j / 7) % 1, fx = hx + Math.sin(j * 2.3 + time * 3) * (5 - ph * 4), fy = hy - 6 - ph * 18; ctx.fillStyle = hit ? "#ffffff" : ph < 0.35 ? "#fff3b8" : ph < 0.7 ? "#f2b54a" : "#e8613a"; const sz = (1 - ph) * 5 + 1; ctx.fillRect(fx - sz / 2, fy - sz / 2, sz, sz); }
   ctx.fillStyle = hit ? "#ffffff" : "#e8913a"; ctx.fillRect(hx - 4, hy - 11 - k * 2, 8, 7 + k * 2); ctx.fillStyle = "#f2d45a"; ctx.fillRect(hx - 2.5, hy - 9 - k * 2, 5, 5 + k * 2); ctx.fillStyle = "#fff3b8"; ctx.fillRect(hx - 1, hy - 7, 2, 3);
+  }
   // décor, monstres et joueurs, triés de haut en bas
   const list = [];
   for (const o of sgProps(m)) if (o.x - ox > -60 && o.x - ox < VW + 60 && o.y - oy > -20 && o.y - oy < VH + 70) list.push({ y: o.y, d: o });
@@ -1105,6 +1150,7 @@ function siegeDraw() {
   sgDrawLight(ox, oy);
   sgDrawPointers(ox, oy);
   sgDrawHud();
+  if (typeof prDrawOverlay === "function") prDrawOverlay(ox, oy);
 }
 // la nuit et les lumières : une couche sombre percée par les feux
 function sgDrawLight(ox, oy) {
@@ -1112,7 +1158,7 @@ function sgDrawLight(ox, oy) {
   if (!sgDrawLight.cv) { sgDrawLight.cv = document.createElement("canvas"); sgDrawLight.cv.width = VW; sgDrawLight.cv.height = VH; }
   const L = sgDrawLight.cv, g = L.getContext && L.getContext("2d"); if (!g || !g.createRadialGradient) return;
   g.globalCompositeOperation = "source-over"; g.clearRect(0, 0, VW, VH);
-  g.fillStyle = "rgba(10,8,26,0.5)"; g.fillRect(0, 0, VW, VH);
+  g.fillStyle = S_.map.night || "rgba(10,8,26,0.5)"; g.fillRect(0, 0, VW, VH);
   g.globalCompositeOperation = "destination-out";
   const hole = (x, y, r, a = 1) => { if (x < -r || y < -r || x > VW + r || y > VH + r) return; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); };
   const h = S_.map.heart;
@@ -1120,7 +1166,8 @@ function sgDrawLight(ox, oy) {
   for (const p of S_.players) hole(p.x - ox, p.y - oy, p.down ? 30 : 62, 0.9);
   for (const z of S_.zones) if (z.kind === "fire") hole(z.x - ox, z.y - oy, z.r * 2, 0.7);
   for (const f of S_.fx) if (f.kind === "beam" || f.kind === "boom" || f.kind === "zap") hole(f.x - ox, f.y - oy, 50, 0.6);
-  for (const hs of S_.map.houses) hole(hs.c * T + 6 - ox, (hs.r + hs.h) * T - 10 - oy, 18, 0.5);
+  for (const hs of S_.map.houses || []) hole(hs.c * T + 6 - ox, (hs.r + hs.h) * T - 10 - oy, 18, 0.5);
+  for (const L2 of S_.map.lights || []) hole(L2.x - ox, L2.y - oy, L2.r, L2.a || 0.6);
   g.globalCompositeOperation = "source-over";
   ctx.drawImage(L, 0, 0);
   // un halo chaud autour du Cœur
@@ -1186,11 +1233,11 @@ function sgDrawFx(f, ox, oy) {
   else if (f.kind === "boom") { const k = 1 - f.t / 0.4; ctx.globalAlpha = Math.max(0, 0.6 * (1 - k)); ctx.fillStyle = f.c || "#f2b54a"; ctx.beginPath(); ctx.arc(x, y, f.r * (0.4 + k * 0.6), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.fillStyle = "#fff3b8"; ctx.beginPath(); ctx.arc(x, y, f.r * 0.4 * (1 - k), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
 }
 // Ce qui est caché derrière une maison, un arbre, un rocher ou la palissade : une silhouette blanche par-dessus le décor
-const sgPropBox = o => o.kind === "tree" ? [o.x - 10, o.y - 30, o.x + 10, o.y] : o.kind === "rock" ? [o.x - 6, o.y - 11, o.x + 6, o.y]
+const sgPropBox = o => typeof PR_PROPS !== "undefined" && PR_PROPS[o.kind] ? PR_PROPS[o.kind].box(o) : o.kind === "tree" ? [o.x - 10, o.y - 30, o.x + 10, o.y] : o.kind === "rock" ? [o.x - 6, o.y - 11, o.x + 6, o.y]
   : o.kind === "post" ? [o.x - 8, o.y - 20, o.x + 8, o.y] : [o.x - 3, o.y - o.hs.h * T - 3, o.x + o.hs.w * T + 3, o.y];
 function sgEnemyLook(e) {
   const d = SG_ENEMIES[e.type], step = Math.floor(e.t * 6) % 2;
-  const name = d.sprite === "golem" ? "golem0" : ["wisp", "bat", "rodeur", "squelette", "crawler"].includes(d.sprite) ? d.sprite + step : d.sprite + "0";
+  const name = d.sprite === "golem" ? "golem0" : SPRITES[d.sprite + "1"] ? d.sprite + step : d.sprite + "0";
   return { name, sc: d.scale || 1, w: spriteW(name), h: spriteH(name), hop: d.fly ? Math.sin(e.t * 6) * 1.5 : 0 };
 }
 function sgDrawHidden(list, ox, oy) {
@@ -1238,7 +1285,7 @@ function sgDrawEnemy(e, ox, oy) {
   if (x < -40 || y < -40 || x > VW + 40 || y > VH + 40) return;
   ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.beginPath(); ctx.ellipse(x, y + e.r * 0.6, e.r * 1.1, e.r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
   const step = Math.floor(e.t * 6) % 2;
-  const name = d.sprite === "golem" ? "golem0" : d.sprite === "wisp" || d.sprite === "bat" || d.sprite === "rodeur" || d.sprite === "squelette" || d.sprite === "crawler" ? d.sprite + step : d.sprite + "0";
+  const name = d.sprite === "golem" ? "golem0" : SPRITES[d.sprite + "1"] ? d.sprite + step : d.sprite + "0";
   if (!SPRITES[name]) { ctx.fillStyle = "#c4413b"; ctx.fillRect(x - e.r, y - e.r, e.r * 2, e.r * 2); return; }
   const w = spriteW(name), h = spriteH(name), flip = siege.map.heart.x < e.x;
   const hop = d.fly ? Math.sin(e.t * 6) * 1.5 : 0;
@@ -1249,7 +1296,7 @@ function sgDrawEnemy(e, ox, oy) {
   ctx.save(); ctx.translate(x, y + e.r * 0.6 - hop); ctx.scale(sc, sc);
   // le flash de coup : bref et intermittent sur les boss (sinon ils resteraient blancs sous les coups)
   drawSprite(name, -w / 2, -h, flip, e.flash > 0 && (!d.boss || Math.floor(time * 30) % 4 === 0));
-  if (d.lord) {
+  if (d.lord && e.type === "seigneur") {
     // la couronne
     ctx.fillStyle = "#f2b54a"; ctx.fillRect(-4, -h - 3, 8, 2); ctx.fillRect(-4, -h - 5, 1.5, 2); ctx.fillRect(-0.75, -h - 6, 1.5, 3); ctx.fillRect(2.5, -h - 5, 1.5, 2);
     ctx.fillStyle = "#e0453c"; ctx.fillRect(-0.5, -h - 3, 1, 1);
@@ -1279,6 +1326,7 @@ function sgDrawPlayer(p, ox, oy) {
     if (p.reviveT > 0) { ctx.fillStyle = "#7fd6a0"; ctx.fillRect(x - 8, y - 12, 16 * p.reviveT / SG.revive, 2); }
     drawTinyText(x, y - 20, "A TERRE", "#c4413b"); return;
   }
+  if (p.endK != null) { ctx.save(); ctx.globalAlpha = Math.max(0, 1 - p.endK); ctx.translate(x, y - 6); ctx.scale(1 - p.endK * 0.8, 1 - p.endK * 0.8); drawSprite(p.endK > 0.05 ? "hero_fall" : "hero_jump", -6, -7, p.face < 0, false); ctx.restore(); return; }
   if (!(p.iv > 0 && Math.floor(time * 20) % 2)) {
     const moving = Math.hypot(p.input.mx || 0, p.input.my || 0) > 0.2;
     const f = moving ? ["hero_run0", "hero_run1", "hero_run2", "hero_run1"][Math.floor(p.anim) % 4] : "hero_idle0";
@@ -1308,18 +1356,18 @@ function sgDrawHud() {
   ctx.fillStyle = fr < 0.3 ? "#c4413b" : "#c86a2a"; ctx.fillRect(bx, 5, 120 * fr, 7);
   ctx.fillStyle = fr < 0.3 ? "#e0453c" : "#e8913a"; ctx.fillRect(bx, 5, 120 * fr, 4);
   ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(bx, 5, 120 * fr, 1);
-  drawTinyText(VW / 2, 16, `COEUR DU VILLAGE ${Math.max(0, Math.ceil(S_.heart.hp))}`, "#f6efe0");
+  drawTinyText(VW / 2, 16, `${S_.map.heartName || "COEUR DU VILLAGE"} ${Math.max(0, Math.ceil(S_.heart.hp))}`, "#f6efe0");
   // la barre du Seigneur de la Horde
-  const lord = S_.enemies.find(e => e.type === "seigneur");
+  const lord = S_.enemies.find(e => SG_ENEMIES[e.type] && SG_ENEMIES[e.type].lord);
   if (lord) {
     const fr2 = Math.max(0, lord.hp / lord.max), lx = VW / 2 - 80;
     ctx.fillStyle = "rgba(10,8,14,0.85)"; ctx.fillRect(lx - 2, 24, 164, 9);
     ctx.fillStyle = "#3a1018"; ctx.fillRect(lx, 26, 160, 5); ctx.fillStyle = lord.raged ? "#e0453c" : "#a8243a"; ctx.fillRect(lx, 26, 160 * fr2, 5);
     ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fillRect(lx, 26, 160 * fr2, 1);
-    drawTinyText(VW / 2, 35, "LE SEIGNEUR DE LA HORDE", lord.raged ? "#ff8a80" : "#f2b54a");
+    drawTinyText(VW / 2, 35, (SG_ENEMIES[lord.type].name || "Le Seigneur de la Horde").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""), lord.raged ? "#ff8a80" : "#f2b54a");
   }
   // vague
-  const wtxt = S_.phase === "prep" ? (S_.wave ? `REPIT ${Math.ceil(S_.phaseT)}` : `VAGUE 1 DANS ${Math.ceil(S_.phaseT)}`) : `VAGUE ${S_.wave}  ${S_.enemies.length + S_.toSpawn}`;
+  const wtxt = S_.camp && typeof prWaveText === "function" ? prWaveText() : S_.phase === "prep" ? (S_.wave ? `REPIT ${Math.ceil(S_.phaseT)}` : `VAGUE 1 DANS ${Math.ceil(S_.phaseT)}`) : `VAGUE ${S_.wave}  ${S_.enemies.length + S_.toSpawn}`;
   drawTinyText(VW - 4 - wtxt.length * 2, 5, wtxt, "#f2d45a");
   // niveau et expérience
   const need = SG.xpBase + SG.xpGrow * S_.level;
@@ -1365,6 +1413,7 @@ function sgHostNet(dt) {
   S_.lastSnap = now;
   const r1 = v => Math.round(v * 10) / 10;
   S_.net.send("snap", {
+    th: S_.map.theme, ms: S_.map.seed, cp: S_.camp ? { ch: S_.camp.ch, dw: S_.dw, wn: S_.camp.waves, st: S_.story ? S_.story.key : 0 } : 0,
     w: S_.wave, ph: S_.phase, pt: r1(S_.phaseT), hh: Math.ceil(S_.heart.hp), hm: S_.heart.max, hit: S_.heart.hitT > 0 ? 1 : 0, lv: S_.level, xp: S_.xp, k: S_.kills, ts: S_.toSpawn,
     pl: S_.players.map(p => [p.pid, r1(p.x), r1(p.y), p.hp, p.s.maxHp, p.face, p.down ? 1 : 0, r1(p.aim), p.iv > 0 ? 1 : 0, p.items, p.orbs ? p.orbs.map(o => [r1(o[0]), r1(o[1]), r1(o[2])]) : 0,
       [r1(p.fireR || 0), r1(p.frostR || 0)], r1(p.reviveT), Math.round(Math.hypot(p.input.mx, p.input.my) * 10), p.spells, p.s.slots, r1(p.s.speed), r1(p.s.size), p.cd ? Object.fromEntries(Object.entries(p.cd).map(([k, v]) => [k, r1(Math.max(0, v))])) : 0]),
@@ -1405,6 +1454,9 @@ function sgGuestUpdate(dt) {
 function sgApplySnap(m) {
   const S_ = siege; if (!S_ || S_.host) return;
   S_.lastRx = Date.now();
+  // l'hôte a changé de décor (chapitre suivant du prélude) : on reconstruit la carte
+  if (m.th && (m.th !== S_.map.theme || m.ms !== S_.map.seed)) { S_.map = sgBuildMap(m.ms, m.th); }
+  if (typeof prGuestSync === "function") prGuestSync(m.cp);
   Object.assign(S_, { wave: m.w, phase: m.ph, phaseT: m.pt, level: m.lv, xp: m.xp, kills: m.k, toSpawn: m.ts });
   S_.heart.hp = m.hh; S_.heart.max = m.hm; S_.heart.hitT = m.hit ? 0.1 : 0;
   for (const a of m.pl) {
@@ -1419,7 +1471,7 @@ function sgApplySnap(m) {
     if (a[14]) p.spells = a[14]; if (a[15]) p.s.slots = a[15]; if (a[16]) p.s.speed = a[16]; if (a[17]) p.s.size = a[17]; if (a[18]) p.cd = a[18];
   }
   const seen = new Map(S_.enemies.map(e => [e.id, e]));
-  S_.enemies = m.en.map(a => { let e = seen.get(a[0]); if (!e) e = { id: a[0], type: a[1], x: a[2], y: a[3], t: Math.random() * 6, r: SG_ENEMIES[a[1]].r * (SG_ENEMIES[a[1]].scale || 1) }; e.tx = a[2]; e.ty = a[3]; e.hp = a[4]; e.max = 100; e.flash = a[5] ? 0.1 : 0; if (a[1] === "seigneur") e.raged = a[4] < 50; return e; });
+  S_.enemies = m.en.map(a => { let e = seen.get(a[0]); if (!e) e = { id: a[0], type: a[1], x: a[2], y: a[3], t: Math.random() * 6, r: SG_ENEMIES[a[1]].r * (SG_ENEMIES[a[1]].scale || 1) }; e.tx = a[2]; e.ty = a[3]; e.hp = a[4]; e.max = 100; e.flash = a[5] ? 0.1 : 0; if (SG_ENEMIES[a[1]] && SG_ENEMIES[a[1]].lord) e.raged = a[4] < 50; return e; });
   S_.shots = m.sh.map(a => ({ owner: a[0], kind: ["bolt", "boomer", "moon", "wave", "shard"][a[1]] || "bolt", x: a[2], y: a[3], r: a[4], a: a[5], age: time }));
   S_.zones = (m.zn || []).map(z => ({ kind: z[0], x: z[1], y: z[2], r: z[3], t: z[4], dur: z[5], tx: z[6], ty: z[7] }));
   S_.foeShots = m.fs.map(a => ({ x: a[0], y: a[1], big: !!a[2] }));
@@ -1451,8 +1503,9 @@ let sgLobbyState = null, sgOptFrom = null;
 function sgOnNet(ev, m) {
   const L = sgLobbyState;
   if (ev === "start" && L && !L.host && !siege && m.v !== SG.netV) { toast("L'hôte n'a pas la même version du jeu : rechargez tous la page.", 4000, true); return; }
-  if (ev === "start" && L && !L.host && !siege) {
-    siegeStart({ seed: m.seed, host: false, net: L.net, players: m.players.map(p => ({ src: "net", name: p.name, pid: p.pid })) });
+  if (ev === "start" && L && !L.host && (!siege || siege.over)) {
+    siege = null;     // (le prélude relance un chapitre perdu : on repart sur la nouvelle partie de l'hôte)
+    siegeStart({ seed: m.seed, host: false, net: L.net, players: m.players.map(p => ({ src: "net", name: p.name, pid: p.pid })), theme: m.theme, camp: m.camp });
     siege.myPid = L.me.pid; siege.lastRx = Date.now();
     siege.local = siege.players.filter(p => p.pid === L.me.pid);
     return;
@@ -1490,7 +1543,10 @@ function sgHostStart() {
   const others = L.members.filter(m => m.pid !== L.me.pid && m.v === SG.netV).slice(0, 3);
   if (L.members.some(m => m.pid !== L.me.pid) && !others.length) return;
   const players = [{ src: "auto", name: L.me.pseudo, pid: L.me.pid }, ...others.map(m => ({ src: "net", name: m.name, pid: m.pid }))];
-  L.net.send("start", { seed, v: SG.netV, players: players.map(p => ({ name: p.name, pid: p.pid })) });
+  // le Prélude : l'hôte choisit le chapitre (et la sauvegarde), les invités suivent
+  const pre = typeof sgMode !== "undefined" && sgMode === "prelude" && typeof prHostInfo === "function" ? prHostInfo() : null;
+  L.net.send("start", { seed, v: SG.netV, players: players.map(p => ({ name: p.name, pid: p.pid })), theme: pre && pre.theme, camp: pre && pre.camp });
+  if (pre) { if (siege) { siege = null; } siegeStart({ seed, host: true, net: L.net, players, theme: pre.theme, camp: pre.camp }); prAfterStart(); return; }
   siegeStart({ seed, host: true, net: L.net, players });
 }
 // les deux options de combat : chaque joueur règle les siennes (aussi en ligne et pendant la pause)
@@ -1521,8 +1577,10 @@ function renderSiegeLobby() {
         <button class="mi" data-act="sgLeave">Quitter le salon</button></nav>`;
   } else {
     const pads = sgPads().length;
-    el.innerHTML = `<div><span class="kicker">Nouveau mode · en test</span><div class="big small">Siège du village</div></div>
-      <p class="pvp-help">Défends le Cœur du village contre des vagues de monstres. Gagne des niveaux, choisis un objet après chaque vague. ${best ? `Record : vague ${best}.` : ""}</p>
+    const pre = typeof sgMode !== "undefined" && sgMode === "prelude";
+    el.innerHTML = `<div><span class="kicker">${pre ? "Mode horde · histoire" : "Mode horde · en test"}</span><div class="big small">${pre ? "Prélude : la chute de Valcendre" : "Siège du village"}</div></div>
+      <p class="pvp-help">${pre ? "Avant le Puits : du château au village, puis la forêt, jusqu'au vieux Puits. Quatre chapitres de vagues, un boss au bout de chacun ; tes sorts et tes objets te suivent d'un chapitre à l'autre." : `Défends le Cœur du village contre des vagues de monstres. Gagne des niveaux, choisis un objet après chaque vague. ${best ? `Record : vague ${best}.` : ""}`}</p>
+      ${typeof prMenuHtml === "function" ? prMenuHtml() : ""}
       <nav class="menu-list">
         <button class="mi" data-act="sgSolo">Seul</button>
         <button class="mi" data-act="sgLocal">À deux, même écran<small>${pads >= 2 ? "deux manettes" : pads === 1 ? "clavier-souris + manette" : "branche une manette pour le joueur 2"}</small></button>
@@ -1559,7 +1617,7 @@ function renderSiegeLobby() {
         else { siege.inT = (siege.inT || 0) - dt; if (siege.inT <= 0) { siege.inT = 0.25; siege.net.send("in", { pid: siege.myPid, mx: 0, my: 0, ax: 0, ay: 0, fire: false, aim: false, af: false, aa: false }); } }
       }
     }
-    if (siege && siege.net && !siege.host && !siege.over && Date.now() - (siege.lastRx || Date.now()) > 20000) { siege.over = { why: "L'hôte ne répond plus.", wave: siege.wave, kills: siege.kills, level: siege.level, time: siege.time, best: siege.wave }; siege.pickDone = null; sgShowEnd(); }
+    if (siege && siege.net && !siege.host && !siege.over && !siege.final && !siege.ending && Date.now() - (siege.lastRx || Date.now()) > 20000) { siege.over = { why: "L'hôte ne répond plus.", wave: siege.wave, kills: siege.kills, level: siege.level, time: siege.time, best: siege.wave }; siege.pickDone = null; sgShowEnd(); }
     siegeDraw();
     requestAnimationFrame(frame);
   });

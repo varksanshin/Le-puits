@@ -65,6 +65,10 @@ js/                        le code du jeu, chargé dans l'ordre des numéros
   37-siege.js              mode Siège (en test) : vue du dessus, vagues, sorts à niveaux (SG_SPELLS : éveil au 5, forme finale au 10, SG.slots emplacements),
                            objets à rareté (SG_RARITY, SG_SCROLLS), boss final (seigneur, SG.finalWave), difficulté selon l'équipe (SG.coopCount, coopHp, lvCount),
                            coop locale et en ligne (l'invité déplace lui-même son héros)
+  38-prelude.js            Prélude « la chute de Valcendre » : 4 chapitres du mode horde (PR_CHAPTERS : château, village, forêt, puits),
+                           décors (PR_THEMES, PR_PROPS), boss de chapitre, textes (PR_STORY), sauvegarde par chapitre, fin → mode aventure ;
+                           difficulté dans PR (PV par vague, nombre de monstres, bossK = PV des boss)
+  39-bestiaires.js         onglets du bestiaire : Créatures, Gardiens (gardiens de zone + Gardien du fond), Horde (Siège et Prélude)
   33-synchro.js            synchronise la progression entre appareils (code de reprise, Supabase : cloud_saves)
   32-en-ligne.js           envoie un résumé anonyme de chaque partie à Supabase (projet « le-puits ») pour l'équilibrage
   29-demarrage.js          le démarrage du jeu (toujours le dernier)
