@@ -544,3 +544,15 @@ body[data-input="pad"] .sync-link:focus-within::after{content:"A : écrire";posi
 .menu-panel[data-panel="main"] .big{font-size:clamp(30px,5.6vw,60px)}
 .menu-panel[data-panel="main"] .menu-list .mi.tile{padding:6px 9px}
 .menu-panel[data-panel="main"] .menu-sec{margin:4px 0 0}
+/* plus de barre de défilement visible : on défile toujours à la molette, au doigt ou au stick droit */
+.menu,.menu-panel{scrollbar-width:none;-ms-overflow-style:none}
+.menu::-webkit-scrollbar,.menu-panel::-webkit-scrollbar{display:none;width:0;height:0}
+/* Options et Commandes : deux petites icônes rondes en haut à droite */
+.menu-list.corner-icons{position:absolute;top:clamp(8px,2.2%,20px);right:clamp(8px,2.2%,20px);display:flex;gap:8px;z-index:3}
+.menu-list .mi.icon-btn{width:clamp(34px,4.4vw,44px);height:clamp(34px,4.4vw,44px);padding:0;display:grid;place-items:center;border-radius:50%;
+  background:rgba(14,10,18,.5);border:1px solid rgba(233,225,207,.18);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);color:var(--bone)}
+.menu-list .mi.icon-btn::before{display:none}
+.menu-list .mi.icon-btn .ico{font-style:normal;font-size:clamp(16px,2.2vw,21px);line-height:1;color:var(--ember);text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.menu-list .mi.icon-btn:hover,.menu-list .mi.icon-btn:focus{background:var(--ember);border-color:transparent;transform:rotate(20deg)}
+.menu-list .mi.icon-btn:hover .ico,.menu-list .mi.icon-btn:focus .ico{color:#1a1008;text-shadow:none}
+body[data-input="pad"] .menu .mi.icon-btn:focus::after{right:-4px;top:-4px;transform:none;width:16px;height:16px;font-size:10px;line-height:16px}
