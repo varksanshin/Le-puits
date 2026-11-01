@@ -1483,10 +1483,13 @@ function sgApplySnap(m) {
 async function sgLobby(code, asHost) {
   // pas besoin de passer par le Duel : on retrouve le pseudo du compte, sinon on prend celui tapé ici
   if (!PVP.me) await pvpProfile().catch(() => null);
-  if (!PVP.me) { toast("Crée ton compte ou connecte-toi (pseudo + mot de passe) pour jouer en ligne.", 3000); renderSiegeLobby(); return; }
+  // les champs du compte sont remplis ? on crée le compte (ou on se connecte) d'abord, puis on continue
+  const typed = (document.getElementById("acctName") || {}).value && (document.getElementById("acctPass") || {}).value;
+  if (!PVP.me && typed && typeof pvpAccountSubmit === "function") await pvpAccountSubmit("acctLogin");
+  if (!PVP.me) { if (!typed && typeof pvpAcctMsg === "function") pvpAcctMsg("Pour jouer en ligne, écris un pseudo et un mot de passe ci-dessus, puis « Créer mon compte »."); renderSiegeLobby(); return; }
   await cloudEnsure().catch(() => {});
-  const me = PVP.me || { pid: "g-" + pvpId(8), pseudo: pvpPseudo || "Joueur" };
-  if (!me.pid) me.pid = "g-" + pvpId(8);
+  // chaque appareil est un joueur à part, même avec le même compte (sinon l'un bouge et l'autre tire)
+  const me = { ...PVP.me, pid: (PVP.me.pid || "g-" + pvpId(8)) + "~" + pvpId(4) };
   const L = { code, host: asHost, me, members: [], net: null };
   sgLobbyState = L;
   renderSiegeLobby();
@@ -1543,6 +1546,7 @@ function sgHostStart() {
   const others = L.members.filter(m => m.pid !== L.me.pid && m.v === SG.netV).slice(0, 3);
   if (L.members.some(m => m.pid !== L.me.pid) && !others.length) return;
   const players = [{ src: "auto", name: L.me.pseudo, pid: L.me.pid }, ...others.map(m => ({ src: "net", name: m.name, pid: m.pid }))];
+  const seen = {}; for (const p of players) { seen[p.name] = (seen[p.name] || 0) + 1; if (seen[p.name] > 1) p.name += " " + seen[p.name]; }
   // le Prélude : l'hôte choisit le chapitre (et la sauvegarde), les invités suivent
   const pre = typeof sgMode !== "undefined" && sgMode === "prelude" && typeof prHostInfo === "function" ? prHostInfo() : null;
   L.net.send("start", { seed, v: SG.netV, players: players.map(p => ({ name: p.name, pid: p.pid })), theme: pre && pre.theme, camp: pre && pre.camp });
@@ -1565,6 +1569,7 @@ function sgShowPause() {
 }
 function renderSiegeLobby() {
   const el = document.getElementById("siegePanel"); if (!el) return;
+  if (typeof keepInputs === "function" && !renderSiegeLobby.inner) { renderSiegeLobby.inner = true; try { return keepInputs(el, renderSiegeLobby); } finally { renderSiegeLobby.inner = false; } }
   const L = sgLobbyState, best = (() => { try { return +localStorage.getItem("lepuits.siege.best") || 0; } catch (e) { return 0; } })();
   const onoff = v => v ? "Activée" : "Coupée";
   if (L) {

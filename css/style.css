@@ -568,3 +568,4 @@ body[data-input="pad"] .menu .mi.icon-btn:focus::after{right:-4px;top:-4px;trans
 .ost-list .mi.tile.on{background:rgba(232,145,58,.22);border-color:rgba(242,181,74,.6)}
 .ost-list .mi.tile.on .ico{background:var(--ember);color:#1a1008}
 .ost-panel .ost-now{position:sticky;top:-4px;z-index:2;background:rgba(30,20,22,.92)}
+.acct-msg{color:#ffb38a;border-left:3px solid #e8913a;padding:4px 8px;background:rgba(232,145,58,.1);border-radius:4px;margin:2px 0}
