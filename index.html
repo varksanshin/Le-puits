@@ -70,6 +70,7 @@
           </nav>
         </div>
         <nav class="menu-list corner-icons" aria-label="Réglages">
+          <button class="mi icon-btn" data-act="soundtrack" title="Bande-son" aria-label="Bande-son"><i class="ico">♫</i></button>
           <button class="mi icon-btn" data-act="controls" title="Commandes" aria-label="Commandes"><i class="ico">✥</i></button>
           <button class="mi icon-btn" data-act="options" title="Options" aria-label="Options"><i class="ico">⚙</i></button>
         </nav>
@@ -106,6 +107,12 @@
       <div class="menu-panel pvp-panel" data-panel="siege" id="siegePanel" hidden></div>
       <div class="menu-panel pvp-panel" data-panel="pvpDraft" id="pvpDraftPanel" hidden></div>
       <div class="menu-panel pvp-panel" data-panel="pvpRank" id="pvpRankPanel" hidden></div>
+      <div class="menu-panel ost-panel" data-panel="soundtrack" hidden>
+        <div class="big small">Bande-son</div>
+        <div class="ost-now" id="ostNow"></div>
+        <div id="ostList"></div>
+        <nav class="menu-list"><button class="mi" data-act="back">Retour</button></nav>
+      </div>
       <div class="menu-panel best-panel" data-panel="bestiary" hidden>
         <div class="big small">Bestiaire</div>
         <div class="best-grid" id="bestGrid"></div>
@@ -265,6 +272,7 @@
         <li>Le mode horde a enfin sa musique : la cour du château (marche), le village de Valcendre (gigue, aussi pour le Siège libre), la forêt de Brumesombre (tambours), le vieux Puits (épique) et un thème pour les boss de la horde</li>
         <li>Pendant le répit entre deux vagues, la batterie se tait et la musique respire</li>
         <li>Options → Musique : Activée, Douce ou Coupée</li>
+        <li>Bande-son : l'icône ♫ en haut à droite du menu permet d'écouter les 15 thèmes en entier, avec le titre et le temps écoulé</li>
         <li>Le Royaume céleste devient un ciel ouvert : soleil et rayons, mers de nuages, îles flottantes avec cascades et temples, colonnade dorée, marbre veiné d'or, lys de lumière et plumes qui tombent</li>
         <li>Le Royaume infernal : volcans et coulées, mer de lave, forteresse d'obsidienne aux fenêtres rougeoyantes, chaînes géantes, roche fendue de magma, braises et cendres, et une pénombre rouge</li>
       </ul>
@@ -508,6 +516,7 @@
 <script src="js/39-bestiaires.js"></script>
 <script src="js/40-menus.js"></script>
 <script src="js/41-royaumes.js"></script>
+<script src="js/42-bande-son.js"></script>
 <script src="js/29-demarrage.js"></script>
 </body>
 </html>

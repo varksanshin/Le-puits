@@ -512,7 +512,8 @@ const MUSIC = (() => {
     }
     if (master) {
       const fading = ac.currentTime < fadeUntil;
-      const target = (!level || !want || fading) ? 0 : LEVEL_GAIN[level] * (screen === "pause" || screen === "siegemenu" ? 0.5 : 1);
+      const lv = forced ? (level || 2) : level;      // la bande-son du menu joue même si la musique du jeu est coupée
+      const target = (!lv || !want || fading) ? 0 : LEVEL_GAIN[lv] * (screen === "pause" || screen === "siegemenu" ? 0.5 : 1);
       master.gain.setTargetAtTime(target, ac.currentTime, fading ? 0.08 : 0.15);
     }
   }
@@ -546,7 +547,12 @@ const MUSIC = (() => {
     label: () => ["Coupée", "Douce", "Activée"][level],
     track: () => currentTrack, ctx: () => { initAudio(); return ac; },
     // pour les tests
-    _tracks: TRACKS, _want: () => desiredTrack(), _force: n => { forced = n; }, _compile: compile, _length: n => { const P = compile(n), T = TRACKS[n]; return P ? P.len * 60 / T.bpm / 4 : 0; }
+    _tracks: TRACKS, _want: () => desiredTrack(), _force: n => { forced = n; },
+    // la bande-son (menu) : jouer un thème depuis le début, l'arrêter, savoir où on en est
+    play: n => { unlock(); forced = n; currentTrack = null; update(); },
+    stop: () => { forced = null; },
+    playing: () => forced,
+    pos: () => { const T = currentTrack && TRACKS[currentTrack], P = T && compile(currentTrack); if (!P) return null; const sd = 60 / T.bpm / 4; return { t: (step % P.len) * sd, len: P.len * sd }; }, _compile: compile, _length: n => { const P = compile(n), T = TRACKS[n]; return P ? P.len * 60 / T.bpm / 4 : 0; }
   };
 })();
 // Le bouton « Musique » est dans Options (index.html, data-act="music") : il passe par menuAction,
