@@ -521,3 +521,26 @@ body[data-input="pad"] .sync-link:focus-within::after{content:"A : écrire";posi
 @media (max-width:440px){.menu-list.tiles,.menu-panel[data-panel="pause"] .menu-list{grid-template-columns:1fr}}
 .menu-list.hero-tiles{display:flex;gap:5px}
 .menu-list.hero-tiles .mi.tile{flex:1}
+/* ===================== 0.28b : menu « flottant » — plus de grand cadre, le décor animé reste visible =====================
+   Le panneau n'a plus de fond ni de bordure : seules les tuiles ont un léger verre fumé.
+   Un dégradé discret à gauche garde le texte lisible. */
+.menu{background:linear-gradient(90deg,rgba(9,7,13,.55) 0%,rgba(9,7,13,.28) 45%,rgba(9,7,13,0) 70%)}
+.menu.pause,.menu.wide{background:rgba(9,7,13,.45)}
+.menu-panel{background:none;border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;padding-left:clamp(4px,1vw,10px);padding-right:clamp(4px,1vw,10px)}
+.menu-panel .big,.menu-panel .kicker,.menu-sec,.menu-panel p,.opt > span{text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}
+.menu-panel[data-panel="main"]{max-width:min(520px,62%)}
+.menu-list .mi.tile{background:rgba(14,10,18,.5);border-color:rgba(233,225,207,.12);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.menu-list .mi.tile.prime{background:linear-gradient(90deg,rgba(232,145,58,.32),rgba(14,10,18,.45))}
+.menu-list .mi.tile:focus,.menu-list .mi.tile:hover{background:rgba(40,26,18,.7)}
+.menu-list .mi:not(.tile),.row-list .mi{text-shadow:0 1px 4px rgba(0,0,0,.9)}
+.menu-list .mi:not(.tile):focus,.menu-list .mi:not(.tile):hover,.row-list .mi:focus,.row-list .mi:hover{background:rgba(14,10,18,.6)}
+.menu-list .mi small{color:#d6ccba}
+.menu-sec::after{background:linear-gradient(90deg,rgba(233,225,207,.3),rgba(233,225,207,0))}
+/* les longues listes (options, bestiaire, touches…) gardent un voile léger pour rester lisibles */
+.menu-panel.best-panel,.menu-panel.keys-panel,.menu-panel.inv-panel,.menu-panel[data-panel="options"],.menu-panel[data-panel="sync"]{
+  background:rgba(12,9,16,.55);border-radius:14px;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+/* plus compact en hauteur pour que tout le menu principal tienne sans défiler */
+.menu-panel[data-panel="main"] .big{font-size:clamp(30px,5.6vw,60px)}
+.menu-panel[data-panel="main"] .menu-list .mi.tile{padding:6px 9px}
+.menu-panel[data-panel="main"] .menu-sec{margin:4px 0 0}
